@@ -1,3 +1,29 @@
+# ==========================================
+# 🔒 企業級登入密碼牆 (貼在所有 import 下方)
+# ==========================================
+def check_password():
+    """驗證密碼，若正確返回 True，否則返回 False 並顯示登入欄位"""
+    def password_entered():
+        if st.session_state["password"] == "Meat2026": # 👈 這裡可以修改你的密碼！
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.title("🥩 肉類批發智慧採購系統 - 系統登入")
+        st.text_input("🔑 請輸入系統存取密碼：", type="password", on_change=password_entered, key="password")
+        return False
+    elif not st.session_state["password_correct"]:
+        st.title("🥩 肉類批發智慧採購系統 - 系統登入")
+        st.text_input("🔑 請輸入系統存取密碼：", type="password", on_change=password_entered, key="password")
+        st.error("❌ 密碼錯誤，請重新輸入！")
+        return False
+    return True
+
+if not check_password():
+    st.stop() # 💡 密碼錯誤時，強制停止載入後面的所有儀表板功能！
+# ==========================================
 import streamlit as st
 import gspread
 from gspread_formatting import *
