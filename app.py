@@ -1,5 +1,26 @@
+import streamlit as st
+import gspread
+from gspread_formatting import *
+import pandas as pd
+import re
+import io
+from datetime import datetime, timedelta
+import pytz
+import pdfplumber
+
+from modules.google_db import (
+    get_google_connection, get_drive_connection, fetch_all_google_data,
+    clean_string, SUPPLIERS, DRIVE_FOLDER_ID
+)
+
+from modules.anchor_engine import scan_pdf_with_anchors
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+
+# 💡 鐵律一：set_page_config 必須是整個程式中第一個被執行的 Streamlit 指令！
+st.set_page_config(page_title="肉類批發智慧採購系統", layout="wide", page_icon="🥩")
+
 # ==========================================
-# 🔒 企業級登入密碼牆 (貼在所有 import 下方)
+# 🔒 企業級登入密碼牆
 # ==========================================
 def check_password():
     """驗證密碼，若正確返回 True，否則返回 False 並顯示登入欄位"""
@@ -24,26 +45,8 @@ def check_password():
 if not check_password():
     st.stop() # 💡 密碼錯誤時，強制停止載入後面的所有儀表板功能！
 # ==========================================
-import streamlit as st
-import gspread
-from gspread_formatting import *
-import pandas as pd
-import re
-import io
-from datetime import datetime, timedelta
-import pytz
-import pdfplumber
 
-from modules.google_db import (
-    get_google_connection, get_drive_connection, fetch_all_google_data,
-    clean_string, SUPPLIERS, DRIVE_FOLDER_ID
-)
-
-from modules.anchor_engine import scan_pdf_with_anchors
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
-
-st.set_page_config(page_title="肉類批發智慧採購系統", layout="wide", page_icon="🥩")
-
+# 👇 密碼正確後，才開始初始化系統狀態與變數
 if 'preview_data' not in st.session_state: st.session_state['preview_data'] = None
 if 'current_supplier' not in st.session_state: st.session_state['current_supplier'] = None
 if 'current_quote_date' not in st.session_state: st.session_state['current_quote_date'] = None
