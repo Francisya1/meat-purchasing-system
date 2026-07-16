@@ -4,6 +4,7 @@ from gspread_formatting import *
 import pandas as pd
 import re
 import io
+import random
 from datetime import datetime, timedelta
 import pytz
 import pdfplumber
@@ -12,48 +13,112 @@ from modules.google_db import (
     get_google_connection, get_drive_connection, fetch_all_google_data,
     clean_string, SUPPLIERS, DRIVE_FOLDER_ID
 )
-
 from modules.anchor_engine import scan_pdf_with_anchors
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
-# 💡 鐵律一：set_page_config 必須是整個程式中第一個被執行的 Streamlit 指令！
-st.set_page_config(page_title="肉類批發智慧採購系統", layout="wide", page_icon="🥩")
+# 💡 網頁標題與圖示更改
+st.set_page_config(page_title="📊更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🔒 企業級登入密碼牆
+# 🎨 企業級全白 UI 與隱形斗篷 CSS
+# ==========================================
+hide_st_style = """
+<style>
+    /* 隱藏頂部選單、Fork、底部署名 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* 隱藏預設的 Running... 狀態列 */
+    [data-testid="stStatusWidget"] {visibility: hidden;}
+    
+    /* 強制全網頁白底 */
+    .stApp {
+        background-color: #FFFFFF;
+    }
+    
+    /* 美化登入框與卡片 */
+    .login-box {
+        max-width: 400px; margin: 0 auto; padding: 30px; 
+        border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        background-color: #f9f9f9;
+    }
+    
+    /* 美化分頁 (Tabs) 標籤，讓它看起來更像大型按鈕 */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        padding: 10px 20px; background-color: #f0f2f6; 
+        border-radius: 8px 8px 0 0; font-size: 18px; font-weight: bold;
+    }
+    .stTabs [aria-selected="true"] { background-color: #e6f0ff; color: #1f77b4; }
+    
+    /* 手機版專用：電商式商品卡片設計 */
+    .product-card {
+        padding: 15px; border: 1px solid #eeeeee; border-radius: 8px; 
+        margin-bottom: 12px; background-color: #fafafa;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .product-card h4 { margin-top: 0; color: #333; font-size: 18px; }
+    .product-card p { margin: 5px 0; color: #666; font-size: 14px; }
+    .product-card .price { margin: 10px 0 0 0; color: #d9534f; font-size: 22px; font-weight: bold; }
+    .product-card .badge { 
+        display: inline-block; padding: 3px 8px; border-radius: 4px; 
+        font-size: 12px; font-weight: bold; background-color: #e6f7ff; color: #0066cc; 
+    }
+</style>
+"""
+st.markdown(hide_st_style, unsafe_allow_html=True)
+
+# ==========================================
+# 🌟 趣味動態載入產生器
+# ==========================================
+def get_random_loading_msg():
+    msgs = [
+        "正在為你制作 🍣 🌮 🍧 🍜 🥗 中...",
+        "正在飼養 🐂 🐖 🐓 中...",
+        "系統大廚正在火速切肉 🔪 🥩 🏃‍♂️ 中..."
+    ]
+    return random.choice(msgs)
+
+# ==========================================
+# 🔒 企業登入牆 (加入員工名稱追蹤)
 # ==========================================
 def check_password():
-    """驗證密碼，若正確返回 True，否則返回 False 並顯示登入欄位"""
-    def password_entered():
-        if st.session_state["password"] == "Meat2026": # 👈 這裡可以修改你的密碼！
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        st.title("🥩 肉類批發智慧採購系統 - 系統登入")
-        st.text_input("🔑 請輸入系統存取密碼：", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.title("🥩 肉類批發智慧採購系統 - 系統登入")
-        st.text_input("🔑 請輸入系統存取密碼：", type="password", on_change=password_entered, key="password")
-        st.error("❌ 密碼錯誤，請重新輸入！")
+    if "login_success" not in st.session_state:
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown('<div class="login-box">', unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; color: #333;'>更新報價及搜尋系統</h2>", unsafe_allow_html=True)
+            
+            with st.form("login_form"):
+                username = st.text_input("👤 使用者名稱", placeholder="你的名字 (例如: Francis)")
+                password = st.text_input("🔑 密碼", type="password")
+                submitted = st.form_submit_button("登入 / Enter", use_container_width=True)
+                
+                if submitted:
+                    if not username.strip():
+                        st.warning("⚠️ 請填寫使用者名稱！")
+                    elif password == "Meat2026":
+                        st.session_state["login_success"] = True
+                        st.session_state["username"] = username.strip()
+                        st.rerun()
+                    else:
+                        st.error("❌ 密碼錯誤，請重新輸入！")
+            st.markdown('</div>', unsafe_allow_html=True)
         return False
     return True
 
 if not check_password():
-    st.stop() # 💡 密碼錯誤時，強制停止載入後面的所有儀表板功能！
-# ==========================================
+    st.stop()
 
-# 👇 密碼正確後，才開始初始化系統狀態與變數
+# ==========================================
+# 👇 系統核心變數與資料載入
+# ==========================================
 if 'preview_data' not in st.session_state: st.session_state['preview_data'] = None
-if 'current_supplier' not in st.session_state: st.session_state['current_supplier'] = None
-if 'current_quote_date' not in st.session_state: st.session_state['current_quote_date'] = None
 if 'cloud_db' not in st.session_state: st.session_state['cloud_db'] = None
 
 ACTIVE_SUPPLIERS = sorted(list(set(SUPPLIERS + ["形澧"])))
-
 HEADER_MAP = {
     "新興城": {"LB": "新興城 $/LB", "KG": "新興城 $/KG"},
     "金山洋行": {"LB": "金山 ($/lb)", "KG": "金山 ($/KG)"},
@@ -65,20 +130,20 @@ HEADER_MAP = {
     "萬安(遠東)": {"LB": "萬安 ($/lb)", "KG": "萬安 ($/kg)"},
     "形澧": {"LB": "形澧 $/LB", "KG": "形澧 $/KG"} 
 }
-
 FILENAME_MAPPING = {
     "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行",
     "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行",
     "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧"
 }
 
-target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
+with st.spinner(get_random_loading_msg()):
+    target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
 
 with st.sidebar:
-    st.title("📊 採購系統儀表板")
+    st.title(f"👋 歡迎回來, {st.session_state.get('username', 'User')}!")
+    st.markdown("---")
     if len(hist_vals) > 1:
-        st.metric(label="目前追蹤產品數", value=sum(len(v)-2 for v in cat_data.values() if v), delta="已啟用")
-    
+        st.metric(label="母表追蹤產品數", value=sum(len(v)-2 for v in cat_data.values() if v))
     st.markdown("### 各供應商最後報價")
     if len(hist_vals) > 1:
         latest_dates = {}
@@ -86,38 +151,48 @@ with st.sidebar:
             if len(row) >= 6:
                 if len(row) >= 7 and re.match(r'\d{4}-\d{2}-\d{2}', row[1]):
                     quote_date = row[1]; sup = row[2]
-                else:
-                    quote_date = row[0].split()[0]; sup = row[1]
+                else: quote_date = row[0].split()[0]; sup = row[1]
                 if sup in ACTIVE_SUPPLIERS: latest_dates[sup] = quote_date
         for sup in ACTIVE_SUPPLIERS:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    else: st.info("尚無歷史紀錄")
-    st.markdown("---")
-    st.caption("肉類批發智慧採購系統 v10.3 (極速過濾版)")
-
-tab1, tab2 = st.tabs(["🚀 報價一鍵更新系統", "💰 跨供應商情報雷達 (Tab 2)"])
+    st.caption("版本號: v11.0 (企業上線版)")
 
 # ==========================================
-# 🚀 TAB 1: 報價一鍵更新系統
+# 📊 介面佈局：兩大主要按鈕 (Tabs)
 # ==========================================
+tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
+
+# ----------------------------------------------------
+# 📌 分頁一：一鍵更新報價
+# ----------------------------------------------------
 with tab1:
-    st.header("🚀 報價單一鍵分析與雲端同步")
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1: selected_supplier = st.selectbox("請選擇本次提交的供應商：", ACTIVE_SUPPLIERS, key="sync_sup", on_change=lambda: st.session_state.update(preview_data=None))
-    with col2:
-        hk_tz = pytz.timezone('Asia/Hong_Kong')
-        quote_date = st.date_input("🗓️ 請選擇報價單真實日期：", datetime.now(hk_tz), on_change=lambda: st.session_state.update(preview_data=None))
-    with col3: uploaded_file = st.file_uploader("上傳 PDF 報價單", type="pdf", key="sync_file", on_change=lambda: st.session_state.update(preview_data=None))
+    st.header("更新及雲端同步")
+    
+    # 💡 整合為單一表單，加上 ENTER/提交 按鈕
+    with st.form("upload_form"):
+        col1, col2, col3 = st.columns([1.2, 1, 2])
+        with col1: 
+            selected_supplier = st.selectbox("請選擇本次提交的供應商：", ACTIVE_SUPPLIERS)
+            st.markdown("<br>", unsafe_allow_html=True)
+            # 提交按鈕放在左側下方，醒目直接
+            submit_upload = st.form_submit_button("🚀 ENTER / 提交報價單", use_container_width=True)
+        with col2:
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            quote_date = st.date_input("🗓️ 報價單上的日期：", datetime.now(hk_tz))
+        with col3: 
+            uploaded_file = st.file_uploader("上傳 PDF 報價單", type="pdf")
 
-    if uploaded_file is not None:
-        if st.button("🚀 開始分析並自動備份至雲端", type="primary"):
+    if submit_upload:
+        if uploaded_file is None:
+            st.error("⚠️ 請先上傳 PDF 檔案！")
+        else:
             targets = target_dict.get(selected_supplier, [])
             if not targets: st.error(f"❌ 字典中找不到【{selected_supplier}】的產品。")
             else:
-                pdf_bytes = io.BytesIO(uploaded_file.read())
-                with st.spinner('☁️ 正在備份至雲端...'):
+                with st.spinner(get_random_loading_msg()):
+                    pdf_bytes = io.BytesIO(uploaded_file.read())
                     try:
                         drive_service = get_drive_connection()
                         pdf_bytes.seek(0)
@@ -125,13 +200,11 @@ with tab1:
                         file_metadata = {'name': new_filename, 'parents': [DRIVE_FOLDER_ID]}
                         media = MediaIoBaseUpload(pdf_bytes, mimetype='application/pdf', resumable=True)
                         drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                    except Exception as e: pass
-                
-                with st.spinner('正在解剖 PDF...'):
+                    except Exception: pass
+                    
                     pdf_bytes.seek(0)
                     extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
 
-                with st.spinner('計算升跌狀態...'):
                     thirty_days_ago = datetime.now() - timedelta(days=30)
                     history_lows = {}
                     if len(hist_vals) > 1:
@@ -229,9 +302,7 @@ with tab1:
     if st.session_state['preview_data'] is not None:
         df_preview = pd.DataFrame(st.session_state['preview_data'])
         if len(df_preview) > 0:
-            changed = len(df_preview[df_preview['sort_key'] < 4]); unchanged = len(df_preview[df_preview['sort_key'] == 4])
-            st.success(f"🎉 **成功抓取 {len(df_preview)} 個產品！** (變動：{changed} | 無變動：{unchanged})")
-            
+            st.success(f"🎉 **成功抓取 {len(df_preview)} 個產品！**")
             display_df = df_preview.drop(columns=['target_row', 'lb_col', 'kg_col', 'sheet_name', 'price_lb', 'price_kg', 'is_anomaly', 'sort_key'], errors='ignore')
             def highlight_anomaly(x):
                 df_colors = pd.DataFrame('', index=x.index, columns=x.columns)
@@ -241,17 +312,20 @@ with tab1:
                     elif "🛑" in status: df_colors.loc[i, :] = 'background-color: #e6e6e6; color: #555;'
                     elif "➖" in status: df_colors.loc[i, :] = 'color: #999;'
                 return df_colors
-            st.dataframe(display_df.style.apply(highlight_anomaly, axis=None), height=600)
+            st.dataframe(display_df.style.apply(highlight_anomaly, axis=None), height=400, use_container_width=True)
         
         all_cols_missing = all(item["lb_col"] == -1 and item["kg_col"] == -1 for item in st.session_state['preview_data']) if len(st.session_state['preview_data'])>0 else False
-        if st.button("💾 確認無誤，寫入雲端", type="primary", disabled=all_cols_missing):
-            with st.spinner('📦 正在寫入...'):
+        if st.button("💾 確認無誤，寫入雲端母表", type="primary", disabled=all_cols_missing):
+            with st.spinner(get_random_loading_msg()):
                 gc, sh, _ = get_google_connection()
                 history_records = []
                 hk_tz = pytz.timezone('Asia/Hong_Kong')
                 sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
                 quote_date_str = st.session_state['current_quote_date']
-                history_records.append([sys_today, quote_date_str, st.session_state['current_supplier'], "系統紀錄", "更新日期", "-", "-"])
+                
+                # 💡 將更新者的名字寫入 History Log
+                current_user = st.session_state.get("username", "未知用戶")
+                history_records.append([sys_today, quote_date_str, st.session_state['current_supplier'], "系統紀錄", f"由 {current_user} 更新", "-", "-"])
                 
                 updates_by_sheet = {}; formats_by_sheet = {}
                 for item in st.session_state['preview_data']:
@@ -277,19 +351,26 @@ with tab1:
                     if formats_by_sheet[sn]: format_cell_ranges(target_ws, formats_by_sheet[sn])
                 sh.worksheet("History_Log").append_rows(history_records)
                 fetch_all_google_data.clear() 
-                st.balloons(); st.success("🎉 更新大成功！"); st.session_state['preview_data'] = None; st.rerun()
+                st.balloons(); st.success("🎉 更新大成功！資料已同步至 Google 母表。"); st.session_state['preview_data'] = None; 
 
-# ==========================================
-# 🚀 TAB 2: 智能格價雷達 (含歷史低價 & 雲端極速過濾)
-# ==========================================
+
+# ----------------------------------------------------
+# 📌 分頁二：搜尋系統 (手機專屬卡片介面)
+# ----------------------------------------------------
 with tab2:
-    st.header("💰 跨供應商情報雷達 (模糊語義版)")
-    search_query = st.text_input("🔍 輸入關鍵字 (如: 雞翼、牛上腦)：", placeholder="系統具備智能字典，搜尋「雞比」會自動尋找「餅脾」等同義詞...")
-    
-    q_clean = clean_string(search_query) if search_query else ""
-    search_aliases = set([q_clean])
-    
-    if q_clean:
+    # 💡 使用 Form 包裝搜尋欄，並加上 ENTER/提交 按鈕
+    with st.form("search_form"):
+        col_s1, col_s2 = st.columns([4, 1])
+        with col_s1:
+            search_query = st.text_input("🔍 輸入關鍵字 (如: 雞翼、牛上腦)：", placeholder="輸入產品關鍵字...")
+        with col_s2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_search = st.form_submit_button("🔍 搜尋 / Enter", use_container_width=True)
+
+    if submit_search and search_query:
+        q_clean = clean_string(search_query)
+        search_aliases = set([q_clean])
+        
         STATIC_DICT = {
             "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"],
             "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
@@ -313,101 +394,105 @@ with tab2:
                         for t in targets:
                             if t['sku'] == sku: search_aliases.add(clean_string(t['name']))
                             
-        st.info(f"🧠 AI 已將 `{q_clean}` 智能展開為：`{', '.join(search_aliases)}` 進行聯合搜尋。")
+        st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}`")
 
-        st.markdown("### 1️⃣ 母表建檔產品 (即時比價與歷史低價雷達)")
-        
-        # 💡 歷史低價數據預處理
-        history_prices = {}
-        if len(hist_vals) > 1:
-            for hr in hist_vals[1:]:
-                if len(hr) >= 6:
-                    date_str = hr[1].split()[0] if " " in hr[1] else hr[1] 
-                    try:
-                        rec_date = datetime.strptime(date_str, "%Y-%m-%d")
-                        h_sku = str(hr[3] if len(hr) >= 7 else hr[2]).strip()
-                        h_price_lb = float(hr[5] if len(hr) >= 7 else hr[4])
-                        if h_sku not in history_prices: history_prices[h_sku] = []
-                        history_prices[h_sku].append({'date': rec_date, 'price': h_price_lb})
-                    except: pass
+        # 💡 將第二頁分割為兩個子分頁
+        sub_tab1, sub_tab2 = st.tabs(["📂 搜尋已建立內容", "☁️ 所有供應商中尋找 (未建檔盲掃)"])
 
-        d30 = datetime.now() - timedelta(days=30)
-        d60 = datetime.now() - timedelta(days=60)
-        d90 = datetime.now() - timedelta(days=90)
+        # === 子分頁 A：母表搜尋 ===
+        with sub_tab1:
+            with st.spinner(get_random_loading_msg()):
+                history_prices = {}
+                if len(hist_vals) > 1:
+                    for hr in hist_vals[1:]:
+                        if len(hr) >= 6:
+                            date_str = hr[1].split()[0] if " " in hr[1] else hr[1] 
+                            try:
+                                rec_date = datetime.strptime(date_str, "%Y-%m-%d")
+                                h_sku = str(hr[3] if len(hr) >= 7 else hr[2]).strip()
+                                h_price_lb = float(hr[5] if len(hr) >= 7 else hr[4])
+                                if h_sku not in history_prices: history_prices[h_sku] = []
+                                history_prices[h_sku].append({'date': rec_date, 'price': h_price_lb})
+                            except: pass
 
-        compare_results = []
-        for sn, all_vals in cat_data.items():
-            if not all_vals: continue
-            sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
-            for r_idx in range(min(10, len(all_vals))):
-                for c_idx, cv in enumerate(all_vals[r_idx]):
-                    c_str = clean_string(str(cv))
-                    for sup_name, sup_headers in HEADER_MAP.items():
-                        if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
-            
-            for row_idx, r in enumerate(all_vals[2:]):
-                if not r: continue
-                sku = str(r[0]).strip()
-                origin = str(r[1]).strip() if len(r) > 1 else "未標明"
-                std_name = " | ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
-                
-                clean_sku = clean_string(sku); clean_std = clean_string(std_name)
-                if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
-                    for sup_name, cols in sup_cols.items():
-                        lb_col_idx = cols["LB"]
-                        if lb_col_idx != -1 and lb_col_idx < len(r):
-                            p_val_str = str(r[lb_col_idx]).strip()
-                            nums = re.findall(r'\d+\.?\d*', p_val_str)
-                            if nums and float(nums[0]) > 0:
-                                price_lb = round(float(nums[0]), 1)
-                                
-                                # 💡 30/60/90天 歷史低價提醒機制
-                                hist_alert = "-"
-                                if sku in history_prices:
-                                    p30 = [x['price'] for x in history_prices[sku] if x['date'] >= d30]
-                                    p60 = [x['price'] for x in history_prices[sku] if x['date'] >= d60]
-                                    p90 = [x['price'] for x in history_prices[sku] if x['date'] >= d90]
-                                    
-                                    if p90 and price_lb <= min(p90): hist_alert = "🔥🔥🔥 90天新低"
-                                    elif p60 and price_lb <= min(p60): hist_alert = "🔥🔥 60天新低"
-                                    elif p30 and price_lb <= min(p30): hist_alert = "🔥 30天新低"
+                d30 = datetime.now() - timedelta(days=30)
+                d60 = datetime.now() - timedelta(days=60)
+                d90 = datetime.now() - timedelta(days=90)
 
-                                compare_results.append({
-                                    "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
-                                    "每磅均價 ($/LB)": price_lb, "每公斤均價 ($/KG)": round(price_lb * 2.2046, 1),
-                                    "歷史低價提醒": hist_alert
-                                })
-                                
-        if compare_results:
-            unique_origins = sorted(list(set([res['產地'] for res in compare_results])))
-            selected_origins = st.multiselect("🌍 產地快速篩選 (可複選)：", unique_origins, default=[])
-            
-            if selected_origins:
-                compare_results = [res for res in compare_results if res['產地'] in selected_origins]
-                
+                compare_results = []
+                for sn, all_vals in cat_data.items():
+                    if not all_vals: continue
+                    sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
+                    for r_idx in range(min(10, len(all_vals))):
+                        for c_idx, cv in enumerate(all_vals[r_idx]):
+                            c_str = clean_string(str(cv))
+                            for sup_name, sup_headers in HEADER_MAP.items():
+                                if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
+                    
+                    for row_idx, r in enumerate(all_vals[2:]):
+                        if not r: continue
+                        sku = str(r[0]).strip()
+                        origin = str(r[1]).strip() if len(r) > 1 else "未標明"
+                        std_name = " | ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
+                        
+                        clean_sku = clean_string(sku); clean_std = clean_string(std_name)
+                        if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
+                            for sup_name, cols in sup_cols.items():
+                                lb_col_idx = cols["LB"]
+                                if lb_col_idx != -1 and lb_col_idx < len(r):
+                                    p_val_str = str(r[lb_col_idx]).strip()
+                                    nums = re.findall(r'\d+\.?\d*', p_val_str)
+                                    if nums and float(nums[0]) > 0:
+                                        price_lb = round(float(nums[0]), 1)
+                                        hist_alert = ""
+                                        if sku in history_prices:
+                                            p30 = [x['price'] for x in history_prices[sku] if x['date'] >= d30]
+                                            p60 = [x['price'] for x in history_prices[sku] if x['date'] >= d60]
+                                            p90 = [x['price'] for x in history_prices[sku] if x['date'] >= d90]
+                                            if p90 and price_lb <= min(p90): hist_alert = "🔥🔥🔥 90天新低"
+                                            elif p60 and price_lb <= min(p60): hist_alert = "🔥🔥 60天新低"
+                                            elif p30 and price_lb <= min(p30): hist_alert = "🔥 30天新低"
+
+                                        compare_results.append({
+                                            "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
+                                            "每磅均價 ($/LB)": price_lb, "每公斤均價 ($/KG)": round(price_lb * 2.2046, 1),
+                                            "歷史低價提醒": hist_alert
+                                        })
+                                        
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="每磅均價 ($/LB)")
                 cheapest = df_compare.iloc[0]
-                df_compare['差價 (比最平)'] = df_compare['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
-                df_compare['差價 (比最平)'] = df_compare['差價 (比最平)'].apply(lambda x: f"+${x:.1f}" if x > 0 else "-")
-                df_compare = df_compare[['SKU', '標準品名', '產地', '供應商', '每磅均價 ($/LB)', '每公斤均價 ($/KG)', '差價 (比最平)', '歷史低價提醒']]
                 
-                st.success(f"🏆 最平首選：【{cheapest['供應商']}】 **${cheapest['每磅均價 ($/LB)']:.1f}** / LB")
-                st.dataframe(df_compare.style.highlight_min(subset=['每磅均價 ($/LB)'], color='lightgreen').format({'每磅均價 ($/LB)': "{:.1f}", '每公斤均價 ($/KG)': "{:.1f}"}))
-            else: st.warning("🔍 在你選擇的產地中，沒找到符合條件的報價。")
-        else: st.warning("🔍 沒找到符合條件的有效報價。")
+                # 💡 明確、醒目地顯示最平首選
+                st.markdown(f"""
+                <div style='background-color:#e8f5e9; padding: 20px; border-radius: 10px; border-left: 5px solid #4caf50; margin-bottom: 20px;'>
+                    <h3 style='margin:0; color:#2e7d32;'>🏆 最平首選：【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
+                    <h2 style='margin:10px 0 0 0; color:#1b5e20;'>${cheapest['每磅均價 ($/LB)']:.1f} / LB</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 💡 手機友善：改用電商卡片式排版顯示列表，不會有 Copy 彈出干擾
+                for _, row in df_compare.iterrows():
+                    alert_html = f"<span class='badge'>{row['歷史低價提醒']}</span>" if row['歷史低價提醒'] else ""
+                    diff = row['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
+                    diff_text = f"(比最平貴 ${diff:.1f})" if diff > 0 else "(市場最低價)"
+                    
+                    st.markdown(f"""
+                    <div class="product-card">
+                        <h4>{row['供應商']} - <span style="color:#0066cc;">{row['產地']}</span></h4>
+                        <p><b>品名：</b>{row['標準品名']} (SKU: {row['SKU']})</p>
+                        <p class="price">${row['每磅均價 ($/LB)']:.1f} / LB <span style="font-size:14px; font-weight:normal; color:#888;">{diff_text}</span></p>
+                        <p style="margin-top:5px;">{alert_html}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else: 
+                st.warning("🔍 沒找到符合條件的報價。")
 
-    st.markdown("---")
-    st.markdown("### 2️⃣ 雲端情報雷達 (未建檔產品盲掃)")
-    
-    col_scan, col_clean = st.columns(2)
-    
-    with col_scan:
-        if st.button("📥 極速掃描雲端最新 PDF", type="primary", use_container_width=True):
-            with st.spinner("☁️ 正在智能過濾並解剖各家最新 PDF..."):
+        # === 子分頁 B：雲端盲掃 ===
+        with sub_tab2:
+            with st.spinner(get_random_loading_msg()):
                 try:
                     drive_service = get_drive_connection()
-                    # 加入 createdTime 排序條件，不再盲目下載 70 幾份
                     results = drive_service.files().list(
                         q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", 
                         fields="files(id, name, createdTime)"
@@ -416,7 +501,6 @@ with tab2:
                     
                     if not files: st.warning("資料夾內沒有 PDF。")
                     else:
-                        # 💡 效能救星：將雲端檔案依供應商分組，並只保留「最新上傳」的一份！
                         supplier_files = {}
                         for f in files:
                             fname = f['name']
@@ -427,16 +511,12 @@ with tab2:
                         files_to_scan = []
                         for sup, flist in supplier_files.items():
                             flist.sort(key=lambda x: x.get('createdTime', ''), reverse=True)
-                            files_to_scan.append(flist[0]) # 每一家只掃最新那 1 份
+                            files_to_scan.append(flist[0]) 
                             
                         from modules.pdf_xray import parse_supplier_row, deep_decode_item
                         cloud_db = []
                         
-                        # 進度條顯示，速度大幅提升
-                        progress_bar = st.progress(0)
                         for idx, file in enumerate(files_to_scan):
-                            progress_bar.progress((idx + 1) / len(files_to_scan), text=f"正在解剖 {file['name']}...")
-                            
                             supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
                             request = drive_service.files().get_media(fileId=file['id'])
                             fh = io.BytesIO()
@@ -465,57 +545,28 @@ with tab2:
                                                             "來源檔案": file['name'],
                                                             "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
                                                         })
-                        st.session_state['cloud_db'] = cloud_db
-                        st.success(f"✅ 極速盲掃完成！從最新的 {len(files_to_scan)} 份報價單中，共萃取 {len(cloud_db)} 筆資料！")
+                        
+                        filtered_cloud = [item for item in cloud_db if any(alias in item["search_string"] for alias in search_aliases)]
+                        if filtered_cloud:
+                            df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
+                            cheapest_cloud = df_cloud.iloc[0]
+                            
+                            st.markdown(f"""
+                            <div style='background-color:#e3f2fd; padding: 20px; border-radius: 10px; border-left: 5px solid #1976d2; margin-bottom: 20px;'>
+                                <h3 style='margin:0; color:#1565c0;'>🏆 雲端未建檔最平：【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3>
+                                <h2 style='margin:10px 0 0 0; color:#0d47a1;'>${cheapest_cloud['換算價 ($/LB)']:.1f} / LB</h2>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # 💡 雲端搜尋同樣改用手機友善卡片顯示
+                            for _, row in df_cloud.iterrows():
+                                st.markdown(f"""
+                                <div class="product-card">
+                                    <h4>{row['供應商']} - <span style="color:#0066cc;">{row['產地']}</span></h4>
+                                    <p><b>品名：</b>{row['品名(純)']} {row['包裝規格']}</p>
+                                    <p><b>品牌：</b>{row['品牌']} | <b>來源：</b>{row['來源檔案']}</p>
+                                    <p class="price">${row['換算價 ($/LB)']:.1f} / LB</p>
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
                 except Exception as e: st.error(f"雲端解剖失敗：{e}")
-
-    with col_clean:
-        # 💡 一鍵清理舊檔案：防呆、防擁擠的終極武器
-        if st.button("🧹 一鍵清理雲端舊檔案 (每家僅保留最新 2 份)", type="secondary", use_container_width=True):
-            with st.spinner("正在掃描雲端垃圾檔案..."):
-                try:
-                    drive_service = get_drive_connection()
-                    results = drive_service.files().list(
-                        q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", 
-                        fields="files(id, name, createdTime)"
-                    ).execute()
-                    files = results.get('files', [])
-                    
-                    supplier_files = {}
-                    for f in files:
-                        sup = next((s for kw, s in FILENAME_MAPPING.items() if kw in f['name']), "未知供應商")
-                        if sup not in supplier_files: supplier_files[sup] = []
-                        supplier_files[sup].append(f)
-                    
-                    deleted_count = 0
-                    for sup, flist in supplier_files.items():
-                        flist.sort(key=lambda x: x.get('createdTime', ''), reverse=True)
-                        # 保留最新的 2 份，其餘刪除
-                        if len(flist) > 2:
-                            for f_to_delete in flist[2:]:
-                                drive_service.files().delete(fileId=f_to_delete['id']).execute()
-                                deleted_count += 1
-                                
-                    if deleted_count > 0:
-                        st.success(f"🧹 清理完成！共刪除了 {deleted_count} 份過期的報價單，雲端空間已釋放。")
-                    else:
-                        st.info("ℹ️ 雲端很乾淨，目前每家供應商的檔案都沒有超過 2 份，無需清理。")
-                except Exception as e: st.error(f"清理失敗：{e}")
-
-    if st.session_state['cloud_db']:
-        st.markdown("### 📡 雲端未建檔情報庫")
-        filtered_cloud = st.session_state['cloud_db']
-        
-        if q_clean:
-            filtered_cloud = [item for item in filtered_cloud if any(alias in item["search_string"] for alias in search_aliases)]
-            
-        if filtered_cloud:
-            unique_origins_cloud = sorted(list(set([item["產地"] for item in filtered_cloud])))
-            selected_origins_cloud = st.multiselect("🌍 雲端產地快速篩選 (可複選)：", unique_origins_cloud, default=[])
-            if selected_origins_cloud:
-                filtered_cloud = [item for item in filtered_cloud if item["產地"] in selected_origins_cloud]
-                
-            df_cloud = pd.DataFrame(filtered_cloud).drop(columns=['search_string'])
-            st.dataframe(df_cloud, height=500)
-            st.caption("提示：你可以點擊欄位標題 (如『換算價』) 進行高低排序。")
-        else: st.warning(f"ℹ️ 在未建檔的 PDF 情報庫中，沒找到與 `{q_clean}` 相關的產品。")
