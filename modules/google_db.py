@@ -4,39 +4,34 @@ import gspread
 import re
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-import os
 
 SUPPLIERS = ["新興城", "廣隆", "金山洋行", "哲朗", "浩新", "一峰行", "恆盛", "萬安(遠東)", "形澧"]
 DRIVE_FOLDER_ID = "1w8e_TzqTwELTFgiSU1AEyulv3UyJKzXT"
+# 💡 將新的 Google Sheet ID 設為常數
+NEW_SHEET_ID = "181Zx5T1OLwnE08uf86-_bi_FK22PwCfbuB_Pr7AG2rE"
 
 def clean_string(text):
     if not isinstance(text, str): return ""
     return re.sub(r'[^\w\u4e00-\u9fa5]', '', text).upper()
 
 def get_credentials():
-    """
-    🔒 雙環境機密保險箱：
-    如果在 Streamlit Cloud，讀取 st.secrets
-    如果在 Local 電腦，讀取 credentials.json
-    """
     scopes = [
         'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive' # 移除 readonly，確保可以上傳/刪除 PDF
+        'https://www.googleapis.com/auth/drive'
     ]
     
     if "gcp_service_account" in st.secrets:
-        # 雲端環境
         creds_info = st.secrets["gcp_service_account"]
         return Credentials.from_service_account_info(creds_info, scopes=scopes)
     else:
-        # 本機開發環境
         return Credentials.from_service_account_file('credentials.json', scopes=scopes)
 
 def get_google_connection():
     try:
         creds = get_credentials()
         gc = gspread.authorize(creds)
-        sh = gc.open('Meat project')
+        # 💡 核心更改：使用 open_by_key 精準綁定唯一 ID
+        sh = gc.open_by_key(NEW_SHEET_ID)
         drive_service = build('drive', 'v3', credentials=creds)
         return gc, sh, drive_service
     except Exception as e:
@@ -60,7 +55,7 @@ def fetch_all_google_data():
             
     # 2. 抓取四大母表
     cat_data = {}
-    all_origins = [] # 💡 提取全域所有產地
+    all_origins = [] 
     for sn in ['Beef', 'Pork', 'Chicken', 'Lamp']:
         try:
             vals = sh.worksheet(sn).get_all_values()
@@ -75,12 +70,9 @@ def fetch_all_google_data():
     try: hist_vals = sh.worksheet("History_Log").get_all_values()
     except: hist_vals = []
         
-    global_origins = sorted(list(set(all_origins))) # 自動去重排序
+    global_origins = sorted(list(set(all_origins))) 
     return target_dict, cat_data, hist_vals, global_origins
 
 def get_drive_connection():
-    """
-    🔗 統一使用 Service Account 連結 Google Drive，廢除無實體螢幕無法運行的 OAuth 驗證
-    """
     creds = get_credentials()
     return build('drive', 'v3', credentials=creds)
