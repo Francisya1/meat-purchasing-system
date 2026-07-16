@@ -16,54 +16,108 @@ from modules.google_db import (
 from modules.anchor_engine import scan_pdf_with_anchors
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
-# 💡 網頁標題與圖示更改
-st.set_page_config(page_title="📊更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
+# 💡 修正一：移除 page_title 裡的 📊，避免與 page_icon 重疊產生雙 EMOJI
+st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🎨 企業級全白 UI 與隱形斗篷 CSS
+# 🎨 修正二：強制全白背景、黑字（完美適應 Dark Mode 衝突）、隱藏 Loading 狀態
 # ==========================================
 hide_st_style = """
 <style>
-    /* 隱藏頂部選單、Fork、底部署名 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
+    /* 1. 徹底隱藏 Streamlit 的預設裝飾、選單、頁尾 */
+    #MainMenu {visibility: hidden; display: none !important;}
+    footer {visibility: hidden; display: none !important;}
+    header {visibility: hidden; display: none !important;}
     
-    /* 隱藏預設的 Running... 狀態列 */
-    [data-testid="stStatusWidget"] {visibility: hidden;}
+    /* 2. 徹底隱藏 Streamlit 頂部的 "Running..." 與 載入進度條 */
+    [data-testid="stStatusWidget"] {visibility: hidden; display: none !important;}
+    div[data-testid="stDecoration"] {visibility: hidden; display: none !important;}
+    div[data-testid="stSpinner"] {visibility: hidden; display: none !important;}
+    .stSpinner {visibility: hidden; display: none !important;}
     
-    /* 強制全網頁白底 */
+    /* 3. 解決隱形字問題：強制全局「全白背景」與「深色字體」 */
     .stApp {
-        background-color: #FFFFFF;
+        background-color: #FFFFFF !important;
+    }
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6, .stApp p, .stApp span, .stApp label, .stApp li {
+        color: #222222 !important;
     }
     
-    /* 美化登入框與卡片 */
+    /* 確保所有 Input, Select, TextArea 中的文字都是黑色的，不會因為 dark theme 變白色 */
+    .stApp input, .stApp select, .stApp textarea, .stApp button {
+        color: #111111 !important;
+    }
+    
+    /* 表單框架與按鈕背景修正 */
+    div[data-testid="stForm"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E0E0E0 !important;
+    }
+    
+    /* 修正 Tab 標籤上的文字顏色 */
+    .stTabs [data-baseweb="tab"] p {
+        color: #444444 !important;
+        font-weight: bold !important;
+    }
+    .stTabs [aria-selected="true"] p {
+        color: #1f77b4 !important;
+    }
+
+    /* 美化登入框 */
     .login-box {
         max-width: 400px; margin: 0 auto; padding: 30px; 
-        border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        background-color: #f9f9f9;
+        border-radius: 10px; border: 1px solid #E0E0E0;
+        background-color: #FFFFFF !important;
     }
     
-    /* 美化分頁 (Tabs) 標籤，讓它看起來更像大型按鈕 */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] {
-        padding: 10px 20px; background-color: #f0f2f6; 
-        border-radius: 8px 8px 0 0; font-size: 18px; font-weight: bold;
-    }
-    .stTabs [aria-selected="true"] { background-color: #e6f0ff; color: #1f77b4; }
-    
-    /* 手機版專用：電商式商品卡片設計 */
+    /* 4. 修正三：極致緊湊型電商商品卡片 (專為手機優化，節省 60% 空間) */
     .product-card {
-        padding: 15px; border: 1px solid #eeeeee; border-radius: 8px; 
-        margin-bottom: 12px; background-color: #fafafa;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 8px 12px !important; 
+        border: 1px solid #E0E0E0 !important; 
+        border-radius: 6px !important; 
+        margin-bottom: 6px !important; 
+        background-color: #FAFAFA !important;
+        display: flex !important;
+        flex-direction: column !important;
     }
-    .product-card h4 { margin-top: 0; color: #333; font-size: 18px; }
-    .product-card p { margin: 5px 0; color: #666; font-size: 14px; }
-    .product-card .price { margin: 10px 0 0 0; color: #d9534f; font-size: 22px; font-weight: bold; }
-    .product-card .badge { 
-        display: inline-block; padding: 3px 8px; border-radius: 4px; 
-        font-size: 12px; font-weight: bold; background-color: #e6f7ff; color: #0066cc; 
+    .product-card-header {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        border-bottom: 1px dashed #E0E0E0 !important;
+        padding-bottom: 4px !important;
+        margin-bottom: 4px !important;
+    }
+    .product-card-title {
+        font-size: 13px !important;
+        font-weight: bold !important;
+        color: #111111 !important;
+        margin: 0 !important;
+    }
+    .product-card-body {
+        font-size: 11px !important;
+        color: #555555 !important;
+        line-height: 1.4 !important;
+    }
+    .product-card-price-row {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        margin-top: 4px !important;
+    }
+    .product-card-price {
+        color: #D9534F !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+    }
+    .badge { 
+        display: inline-block !important; 
+        padding: 2px 6px !important; 
+        border-radius: 4px !important; 
+        font-size: 10px !important; 
+        font-weight: bold !important; 
+        background-color: #E6F7FF !important; 
+        color: #0066CC !important; 
     }
 </style>
 """
@@ -157,10 +211,10 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.0 (企業上線版)")
+    st.caption("版本號: v11.1 (全白手機優化版)")
 
 # ==========================================
-# 📊 介面佈局：兩大主要按鈕 (Tabs)
+# 📊 介面佈局：更名為「一鍵更新報價」與「搜尋」
 # ==========================================
 tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
 
@@ -170,13 +224,11 @@ tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
 with tab1:
     st.header("更新及雲端同步")
     
-    # 💡 整合為單一表單，加上 ENTER/提交 按鈕
     with st.form("upload_form"):
         col1, col2, col3 = st.columns([1.2, 1, 2])
         with col1: 
             selected_supplier = st.selectbox("請選擇本次提交的供應商：", ACTIVE_SUPPLIERS)
             st.markdown("<br>", unsafe_allow_html=True)
-            # 提交按鈕放在左側下方，醒目直接
             submit_upload = st.form_submit_button("🚀 ENTER / 提交報價單", use_container_width=True)
         with col2:
             hk_tz = pytz.timezone('Asia/Hong_Kong')
@@ -355,10 +407,9 @@ with tab1:
 
 
 # ----------------------------------------------------
-# 📌 分頁二：搜尋系統 (手機專屬卡片介面)
+# 📌 分頁二：搜尋 (包含「搜尋已建立內容」與「所有供應商中尋找」)
 # ----------------------------------------------------
 with tab2:
-    # 💡 使用 Form 包裝搜尋欄，並加上 ENTER/提交 按鈕
     with st.form("search_form"):
         col_s1, col_s2 = st.columns([4, 1])
         with col_s1:
@@ -396,10 +447,10 @@ with tab2:
                             
         st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}`")
 
-        # 💡 將第二頁分割為兩個子分頁
-        sub_tab1, sub_tab2 = st.tabs(["📂 搜尋已建立內容", "☁️ 所有供應商中尋找 (未建檔盲掃)"])
+        # 💡 將搜尋功能分拆為兩個按鈕標籤
+        sub_tab1, sub_tab2 = st.tabs(["📂 搜尋已建立內容", "☁️ 所有供應商中尋找"])
 
-        # === 子分頁 A：母表搜尋 ===
+        # === 📂 搜尋已建立內容 (母表已建檔產品) ===
         with sub_tab1:
             with st.spinner(get_random_loading_msg()):
                 history_prices = {}
@@ -463,32 +514,40 @@ with tab2:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="每磅均價 ($/LB)")
                 cheapest = df_compare.iloc[0]
                 
-                # 💡 明確、醒目地顯示最平首選
+                # 💡 修正四：醒目顯示「最平首選」的【產品全名 + 價錢 + 供應商】
                 st.markdown(f"""
-                <div style='background-color:#e8f5e9; padding: 20px; border-radius: 10px; border-left: 5px solid #4caf50; margin-bottom: 20px;'>
-                    <h3 style='margin:0; color:#2e7d32;'>🏆 最平首選：【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
-                    <h2 style='margin:10px 0 0 0; color:#1b5e20;'>${cheapest['每磅均價 ($/LB)']:.1f} / LB</h2>
+                <div style='background-color:#e8f5e9; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'>
+                    <span style='font-size:12px; color:#2e7d32; font-weight:bold; text-transform:uppercase;'>🏆 最平首選推薦</span>
+                    <h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
+                    <h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # 💡 手機友善：改用電商卡片式排版顯示列表，不會有 Copy 彈出干擾
+                # 💡 修正五：緊湊型電商商品卡片 (專為手機優化，節省滾動空間，且不會觸發 copy bug)
                 for _, row in df_compare.iterrows():
                     alert_html = f"<span class='badge'>{row['歷史低價提醒']}</span>" if row['歷史低價提醒'] else ""
                     diff = row['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
-                    diff_text = f"(比最平貴 ${diff:.1f})" if diff > 0 else "(市場最低價)"
+                    diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
                     
                     st.markdown(f"""
                     <div class="product-card">
-                        <h4>{row['供應商']} - <span style="color:#0066cc;">{row['產地']}</span></h4>
-                        <p><b>品名：</b>{row['標準品名']} (SKU: {row['SKU']})</p>
-                        <p class="price">${row['每磅均價 ($/LB)']:.1f} / LB <span style="font-size:14px; font-weight:normal; color:#888;">{diff_text}</span></p>
-                        <p style="margin-top:5px;">{alert_html}</p>
+                        <div class="product-card-header">
+                            <span class="product-card-title">【{row['供應商']}】 <span style="color:#0066cc;">{row['產地']}</span></span>
+                            <span class="badge" style="background-color: #f5f5f5; color: #555;">{diff_text}</span>
+                        </div>
+                        <div class="product-card-body">
+                            品名: {row['標準品名']} (SKU: {row['SKU']})
+                        </div>
+                        <div class="product-card-price-row">
+                            <span class="product-card-price">${row['每磅均價 ($/LB)']:.1f} / LB</span>
+                            {alert_html}
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
             else: 
                 st.warning("🔍 沒找到符合條件的報價。")
 
-        # === 子分頁 B：雲端盲掃 ===
+        # === ☁️ 所有供應商中尋找 (雲端盲掃) ===
         with sub_tab2:
             with st.spinner(get_random_loading_msg()):
                 try:
@@ -552,20 +611,30 @@ with tab2:
                             cheapest_cloud = df_cloud.iloc[0]
                             
                             st.markdown(f"""
-                            <div style='background-color:#e3f2fd; padding: 20px; border-radius: 10px; border-left: 5px solid #1976d2; margin-bottom: 20px;'>
-                                <h3 style='margin:0; color:#1565c0;'>🏆 雲端未建檔最平：【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3>
-                                <h2 style='margin:10px 0 0 0; color:#0d47a1;'>${cheapest_cloud['換算價 ($/LB)']:.1f} / LB</h2>
+                            <div style='background-color:#e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'>
+                                <span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span>
+                                <h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3>
+                                <h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # 💡 雲端搜尋同樣改用手機友善卡片顯示
+                            # 💡 雲端搜尋同樣改用「緊湊型手機卡片」顯示
                             for _, row in df_cloud.iterrows():
+                                diff = row['換算價 ($/LB)'] - cheapest_cloud['換算價 ($/LB)']
+                                diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
                                 st.markdown(f"""
                                 <div class="product-card">
-                                    <h4>{row['供應商']} - <span style="color:#0066cc;">{row['產地']}</span></h4>
-                                    <p><b>品名：</b>{row['品名(純)']} {row['包裝規格']}</p>
-                                    <p><b>品牌：</b>{row['品牌']} | <b>來源：</b>{row['來源檔案']}</p>
-                                    <p class="price">${row['換算價 ($/LB)']:.1f} / LB</p>
+                                    <div class="product-card-header">
+                                        <span class="product-card-title">【{row['供應商']}】 <span style="color:#0066cc;">{row['產地']}</span></span>
+                                        <span class="badge" style="background-color: #f5f5f5; color: #555;">{diff_text}</span>
+                                    </div>
+                                    <div class="product-card-body">
+                                        品名: {row['品名(純)']} ({row['包裝規格']}) | 品牌: {row['品牌']}<br>
+                                        <span style="font-size:9px; color:#999;">來源檔: {row['來源檔案']}</span>
+                                    </div>
+                                    <div class="product-card-price-row">
+                                        <span class="product-card-price">${row['換算價 ($/LB)']:.1f} / LB</span>
+                                    </div>
                                 </div>
                                 """, unsafe_allow_html=True)
                         else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
