@@ -5,6 +5,7 @@ import pandas as pd
 import re
 import io
 import random
+import time
 from datetime import datetime, timedelta
 import pytz
 import pdfplumber
@@ -20,19 +21,18 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🎨 完美色彩校正與 WAVE 動畫 CSS
+# 🎨 修復副作用的精準 CSS
 # ==========================================
 hide_st_style = """
 <style>
-    /* 1. 隱藏 Streamlit 預設工具列 */
-    #MainMenu {visibility: hidden; display: none !important;}
-    footer {visibility: hidden; display: none !important;}
-    header {visibility: hidden; display: none !important;}
-    [data-testid="stStatusWidget"] {visibility: hidden; display: none !important;}
-    div[data-testid="stDecoration"] {visibility: hidden; display: none !important;}
+    /* 1. 只隱藏右上角三個點與 Deploy 選單，保留 Sidebar 展開按鈕 */
+    [data-testid="stHeader"] { background-color: transparent !important; }
+    [data-testid="stActionElements"] { display: none !important; }
+    footer { visibility: hidden; display: none !important; }
+    [data-testid="stStatusWidget"] { visibility: hidden; display: none !important; }
 
     /* 2. 強制白底黑字 */
-    :root, .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+    :root, .stApp, [data-testid="stAppViewContainer"] {
         --background-color: #FFFFFF !important;
         --secondary-background-color: #F8F9FA !important;
         --text-color: #111111 !important;
@@ -47,17 +47,6 @@ hide_st_style = """
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span, .stApp label {
         color: #111111 !important;
     }
-    
-    /* 修復 Copy 按鈕與所有圖示全黑問題 */
-    button svg, div[data-testid="stCodeBlock"] svg {
-        fill: #666666 !important;
-        stroke: #666666 !important;
-        color: #666666 !important;
-    }
-    button:hover svg {
-        fill: #111111 !important;
-        stroke: #111111 !important;
-    }
 
     /* 3. 完美登入框與表單美化 */
     div[data-testid="stForm"] {
@@ -67,14 +56,14 @@ hide_st_style = """
         padding: 30px !important;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
     }
-    .stApp input, .stApp select {
+    .stApp input, .stApp select, [data-baseweb="select"] {
         background-color: #F9F9F9 !important;
         color: #111111 !important;
         border-color: #CCCCCC !important;
     }
 
-    /* 4. 按鈕美化 */
-    .stApp button {
+    /* 4. 精準按鈕美化 (放過 Copy 按鈕與圖示) */
+    .stButton > button, div[data-testid="stForm"] button {
         background-color: #1F77B4 !important;
         color: #FFFFFF !important;
         border: none !important;
@@ -82,8 +71,20 @@ hide_st_style = """
         font-weight: bold !important;
         box-shadow: 0 2px 5px rgba(31, 119, 180, 0.3) !important;
     }
-    .stApp button * { color: #FFFFFF !important; }
-    .stApp button:hover { background-color: #155B8C !important; }
+    .stButton > button:hover, div[data-testid="stForm"] button:hover { 
+        background-color: #155B8C !important; 
+        color: #FFFFFF !important;
+    }
+    
+    /* 強制修復 Copy 按鈕：透明背景，深色圖示 */
+    button[title="Copy to clipboard"] {
+        background-color: transparent !important;
+        box-shadow: none !important;
+    }
+    button[title="Copy to clipboard"] svg {
+        fill: #888888 !important;
+        stroke: #888888 !important;
+    }
 
     /* 5. 重新排序的商品卡片設計 */
     .product-card {
@@ -143,14 +144,13 @@ def get_wavy_loading_html():
     return f"<div class='wave-text'>{spans}</div>"
 
 # ==========================================
-# 🔒 企業登入牆 (完美整合至格仔內)
+# 🔒 企業登入牆
 # ==========================================
 def check_password():
     if "login_success" not in st.session_state:
         st.markdown("<br><br>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            # 💡 標題直接寫進 form 裡面，確保完美包覆在格仔中
             with st.form("login_form"):
                 st.markdown("<h2 style='text-align: center; margin-top:0; padding-top:0;'>更新報價及搜尋系統</h2>", unsafe_allow_html=True)
                 st.markdown("<hr style='margin-top:0;'>", unsafe_allow_html=True)
@@ -199,11 +199,10 @@ FILENAME_MAPPING = {
     "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧"
 }
 
-# 母表載入時也使用 WAVE 動畫
 loading_ph = st.empty()
 loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
 target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
-loading_ph.empty() # 載入完成後自動清除動畫
+loading_ph.empty()
 
 with st.sidebar:
     st.markdown(f"### 👋 歡迎回來, **{st.session_state.get('username', 'User')}**!")
@@ -223,7 +222,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.3 (波浪動畫 & 完美重排版)")
+    st.caption("版本號: v11.4 (重整升級版)")
 
 # ==========================================
 # 📊 介面佈局
@@ -365,7 +364,7 @@ with tab1:
                 st.session_state['current_supplier'] = selected_supplier
                 st.session_state['current_quote_date'] = quote_date.strftime("%Y-%m-%d")
                 
-                loading_ph2.empty() # 載入完成，清空波浪動畫
+                loading_ph2.empty()
 
     if st.session_state['preview_data'] is not None:
         df_preview = pd.DataFrame(st.session_state['preview_data'])
@@ -419,10 +418,16 @@ with tab1:
                 if updates_by_sheet[sn]: target_ws.batch_update(updates_by_sheet[sn])
                 if formats_by_sheet[sn]: format_cell_ranges(target_ws, formats_by_sheet[sn])
             sh.worksheet("History_Log").append_rows(history_records)
-            fetch_all_google_data.clear() 
             
+            # 💡 更新完成後，清空快取並強制重整網頁，讓側邊欄日期瞬間更新！
+            fetch_all_google_data.clear() 
             loading_ph3.empty()
-            st.balloons(); st.success("🎉 更新大成功！資料已同步至 Google 母表。"); st.session_state['preview_data'] = None; 
+            st.balloons()
+            st.success("🎉 更新大成功！資料已同步至 Google 母表。")
+            st.session_state['preview_data'] = None
+            
+            time.sleep(1.5) # 等待1.5秒讓氣球飛完
+            st.rerun()      # 強制重新載入網頁
 
 
 # ----------------------------------------------------
@@ -430,10 +435,13 @@ with tab1:
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
-        col_s1, col_s2 = st.columns([4, 1])
+        # 💡 將產地篩選功能加回搜尋表單中
+        col_s1, col_s2, col_s3 = st.columns([4, 3, 2])
         with col_s1:
-            search_query = st.text_input("🔍 輸入關鍵字 (如: 雞翼、牛上腦)：", placeholder="輸入產品關鍵字...")
+            search_query = st.text_input("🔍 關鍵字 (如: 雞翼)：", placeholder="輸入產品...")
         with col_s2:
+            selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
+        with col_s3:
             st.markdown("<br>", unsafe_allow_html=True)
             submit_search = st.form_submit_button("🔍 搜尋 / Enter", use_container_width=True)
 
@@ -504,6 +512,11 @@ with tab2:
                     if not r: continue
                     sku = str(r[0]).strip()
                     origin = str(r[1]).strip() if len(r) > 1 else "未標明"
+                    
+                    # 💡 檢查產地篩選條件
+                    if selected_origins and origin not in selected_origins:
+                        continue
+                        
                     std_name = " | ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
                     
                     clean_sku = clean_string(sku); clean_std = clean_string(std_name)
@@ -543,7 +556,6 @@ with tab2:
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # 💡 重新排序的商品卡片：[供應商] 品名 為大標題
                 for _, row in df_compare.iterrows():
                     alert_html = f"<span class='badge'>{row['歷史低價提醒']}</span>" if row['歷史低價提醒'] else ""
                     diff = row['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
@@ -630,7 +642,14 @@ with tab2:
                     
                     search_ph2.empty()
                     
-                    filtered_cloud = [item for item in cloud_db if any(alias in item["search_string"] for alias in search_aliases)]
+                    # 💡 加入產地篩選邏輯
+                    filtered_cloud = []
+                    for item in cloud_db:
+                        if any(alias in item["search_string"] for alias in search_aliases):
+                            if selected_origins and item["產地"] not in selected_origins:
+                                continue
+                            filtered_cloud.append(item)
+
                     if filtered_cloud:
                         df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
                         cheapest_cloud = df_cloud.iloc[0]
@@ -643,7 +662,6 @@ with tab2:
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 💡 重新排序的商品卡片：[供應商] 品名(純) 為大標題
                         for _, row in df_cloud.iterrows():
                             diff = row['換算價 ($/LB)'] - cheapest_cloud['換算價 ($/LB)']
                             diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
