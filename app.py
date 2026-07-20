@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import gspread
 from gspread_formatting import *
 import pandas as pd
@@ -20,7 +21,29 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🎨 修復副作用的精準 CSS
+# 🛑 封殺 CTRL+C 彈出 Clear Cache 視窗的隱形攔截器
+# ==========================================
+components.html(
+    """
+    <script>
+    const doc = window.parent.document;
+    doc.addEventListener('keydown', function(e) {
+        if (e.key === 'c' || e.key === 'C') {
+            const active = doc.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+            if (!e.ctrlKey && !e.metaKey) {
+                e.stopPropagation();
+                e.preventDefault();
+            }
+        }
+    }, true);
+    </script>
+    """,
+    height=0, width=0
+)
+
+# ==========================================
+# 🎨 完美 CSS (修復深色模式衝突與排版)
 # ==========================================
 hide_st_style = """
 <style>
@@ -55,7 +78,6 @@ hide_st_style = """
     .stButton > button:hover, div[data-testid="stForm"] button:hover { 
         background-color: #155B8C !important; color: #FFFFFF !important;
     }
-    /* 全選按鈕的特殊樣式 */
     button[title="View fullscreen"] { display: none !important; }
 
     .product-card {
@@ -147,12 +169,12 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.6 (全選按鈕 & 一鍵斷貨版)")
+    st.caption("版本號: v11.7 (終極無 Bug 實戰版)")
 
 tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
 
 # ----------------------------------------------------
-# 📌 分頁一：一鍵更新報價 (加入一鍵斷貨 & 全選按鈕)
+# 📌 分頁一：一鍵更新報價
 # ----------------------------------------------------
 with tab1:
     st.header("更新及雲端同步")
@@ -229,7 +251,6 @@ with tab1:
                             if nums and float(nums[0]) > 0 and "sold out" not in old_val.lower(): 
                                 old_price_lb = float(nums[0])
                         
-                        # 💡 正常找到的產品
                         if sku_db in extracted_items:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
@@ -264,7 +285,7 @@ with tab1:
 
                             all_preview.append({
                                 "✔️ 寫入": not is_anomaly and not is_sold_out_detected,
-                                "🛑 斷貨": is_sold_out_detected, # 新增斷貨快捷鍵
+                                "🛑 斷貨": is_sold_out_detected,
                                 "SKU": sku_db, "產品原文": data['raw_name'],
                                 "舊價(LB)": f"${old_price_lb}" if old_price_lb else "空",
                                 "✏️ 手動新價(LB)": data['price_lb'] if not is_sold_out_detected else 0.0,
@@ -272,14 +293,11 @@ with tab1:
                                 "追蹤行蹤": data['matched_line'], "target_row": row_idx + 1, "lb_col": lb_col, "kg_col": kg_col, "sheet_name": sheet_name, "sort_key": sort_key
                             })
                             
-                        # 💡 疑似斷貨：母表有紀錄，但新 PDF 找不到
                         elif old_price_lb is not None:
                             all_preview.append({
-                                "✔️ 寫入": False, # 預設不勾選防呆
-                                "🛑 斷貨": True,  # 預設幫你把「斷貨」打勾！如果你要寫入，只需勾前面的「寫入」即可
+                                "✔️ 寫入": False, "🛑 斷貨": True, 
                                 "SKU": sku_db, "產品原文": "⚠️ 報價單中找不到此產品",
-                                "舊價(LB)": f"${old_price_lb}",
-                                "✏️ 手動新價(LB)": 0.0,
+                                "舊價(LB)": f"${old_price_lb}", "✏️ 手動新價(LB)": 0.0,
                                 "變動狀態": "🛑 疑似下架/斷貨", "差額": "-", 
                                 "追蹤行蹤": "-", "target_row": row_idx + 1, "lb_col": lb_col, "kg_col": kg_col, "sheet_name": sheet_name, "sort_key": 5
                             })
@@ -294,8 +312,7 @@ with tab1:
         if len(df_preview) > 0:
             st.success(f"🎉 **成功分析 {len(df_preview)} 個產品！**")
             
-            # 💡 新增：全選 / 取消全選 按鈕
-            st.info("💡 提示：請先使用【全選 / 取消全選】設定好大範圍，再去單獨微調價錢，以免重置你剛打好的數字。")
+            st.info("💡 提示：請先使用【全選 / 取消全選】設定好大範圍，再去單獨微調價錢。")
             col_btn1, col_btn2, _ = st.columns([1, 1, 3])
             with col_btn1:
                 if st.button("☑️ 全部勾選 (寫入)"):
@@ -306,7 +323,6 @@ with tab1:
                     for item in st.session_state['preview_data']: item["✔️ 寫入"] = False
                     st.rerun()
             
-            # 建立可編輯表格 (加入 🛑 斷貨 列)
             edited_df = st.data_editor(
                 df_preview,
                 column_config={
@@ -335,7 +351,7 @@ with tab1:
                 update_count = 0
                 
                 for idx, row in edited_df.iterrows():
-                    if not row["✔️ 寫入"]: continue # 略過未勾選的
+                    if not row["✔️ 寫入"]: continue
                     update_count += 1
                     sn = row["sheet_name"]
                     if sn not in updates_by_sheet: updates_by_sheet[sn] = []; formats_by_sheet[sn] = []
@@ -343,7 +359,6 @@ with tab1:
                     bg_color = color(1.0, 0.6, 0.6) if "🚨" in row["變動狀態"] else color(0.8, 1.0, 0.8) if "📉" in row["變動狀態"] else color(1.0, 0.8, 0.8) if "📈" in row["變動狀態"] else color(0.9, 0.9, 0.9) if "🛑" in row["變動狀態"] else color(1.0, 0.95, 0.6) 
                     fmt = cellFormat(backgroundColor=bg_color)
                     
-                    # 💡 判斷斷貨勾選邏輯，免除手動輸入0的痛苦
                     if row["🛑 斷貨"]:
                         val_lb = "Sold out"
                         val_kg = "Sold out"
@@ -398,6 +413,7 @@ with tab2:
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
         
+        # 💡 只保留最精準的靜態字典，徹底刪除無限放大的動態擴展，確保搜尋範圍清爽準確
         STATIC_DICT = {
             "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
             "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
@@ -405,18 +421,6 @@ with tab2:
         }
         for key, aliases in STATIC_DICT.items():
             if key in q_clean or q_clean in key: search_aliases.update(aliases)
-                
-        for sn, all_vals in cat_data.items():
-            if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue 
-            if not all_vals: continue
-            for r in all_vals[2:]:
-                if not r: continue
-                sku = str(r[0]).strip()
-                std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
-                if q_clean in clean_string(sku) or q_clean in clean_string(std_name):
-                    for sup, targets in target_dict.items():
-                        for t in targets:
-                            if t['sku'] == sku: search_aliases.add(clean_string(t['name']))
                             
         st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}` (範圍: {category_filter})")
 
@@ -508,13 +512,14 @@ with tab2:
                 cheapest = df_compare.iloc[0]
                 
                 if cheapest['每磅均價 ($/LB)'] != "Sold out":
+                    # 💡 HTML 靠左對齊防 Markdown 解析錯誤
                     st.markdown(f"""
-                    <div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'>
-                        <span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span>
-                        <h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
-                        <h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
-                    </div>
-                    """, unsafe_allow_html=True)
+<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'>
+    <span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span>
+    <h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
+    <h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
+</div>
+""", unsafe_allow_html=True)
                 
                 for _, row in df_compare.iterrows():
                     is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
@@ -529,24 +534,126 @@ with tab2:
                     price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     price_color = "#999999" if is_soldout_card else "#D9534F"
                     
+                    # 💡 HTML 靠左對齊防 Markdown 解析錯誤
                     st.markdown(f"""
-                    <div class="product-card">
-                        <div class="product-card-header">
-                            <span class="product-card-title">【{row['供應商']}】 {row['標準品名']}</span>
-                            {f'<span class="badge" style="background-color: #E0E0E0 !important; color: #333333 !important;">{diff_text}</span>' if diff_text else ''}
-                        </div>
-                        <div class="product-card-body">
-                            產地: <span style="color:#0066cc; font-weight:bold;">{row['產地']}</span> | SKU: {row['SKU']}
-                        </div>
-                        <div class="product-card-price-row">
-                            <span class="product-card-price" style="color: {price_color} !important;">{price_display}</span>
-                            {alert_html}
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+<div class="product-card">
+    <div class="product-card-header">
+        <span class="product-card-title">【{row['供應商']}】 {row['標準品名']}</span>
+        {f'<span class="badge" style="background-color: #E0E0E0 !important; color: #333333 !important;">{diff_text}</span>' if diff_text else ''}
+    </div>
+    <div class="product-card-body">
+        產地: <span style="color:#0066cc; font-weight:bold;">{row['產地']}</span> | SKU: {row['SKU']}
+    </div>
+    <div class="product-card-price-row">
+        <span class="product-card-price" style="color: {price_color} !important;">{price_display}</span>
+        {alert_html}
+    </div>
+</div>
+""", unsafe_allow_html=True)
             else: 
                 st.warning("🔍 沒找到符合條件的報價。")
 
+        # 💡 完美補回所有雲端盲掃邏輯
         with sub_tab2:
             st.info("💡 提示：雲端盲掃模式因沒有預先設定的分類，搜尋將會比對所有找到的內容。")
-            # 雲端搜尋維持正常運作...
+            search_ph2 = st.empty()
+            search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            try:
+                drive_service = get_drive_connection()
+                results = drive_service.files().list(
+                    q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", 
+                    fields="files(id, name, createdTime)"
+                ).execute()
+                files = results.get('files', [])
+                
+                if not files: 
+                    search_ph2.empty()
+                    st.warning("資料夾內沒有 PDF。")
+                else:
+                    supplier_files = {}
+                    for f in files:
+                        fname = f['name']
+                        sup = next((s for kw, s in FILENAME_MAPPING.items() if kw in fname), "未知供應商")
+                        if sup not in supplier_files: supplier_files[sup] = []
+                        supplier_files[sup].append(f)
+                        
+                    files_to_scan = []
+                    for sup, flist in supplier_files.items():
+                        flist.sort(key=lambda x: x.get('createdTime', ''), reverse=True)
+                        files_to_scan.append(flist[0]) 
+                        
+                    from modules.pdf_xray import parse_supplier_row, deep_decode_item
+                    cloud_db = []
+                    
+                    for idx, file in enumerate(files_to_scan):
+                        supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
+                        request = drive_service.files().get_media(fileId=file['id'])
+                        fh = io.BytesIO()
+                        downloader = MediaIoBaseDownload(fh, request)
+                        done = False
+                        while not done: _, done = downloader.next_chunk()
+                        fh.seek(0)
+                        
+                        with pdfplumber.open(fh) as pdf:
+                            for page in pdf.pages:
+                                for table in page.extract_tables():
+                                    for row in table:
+                                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                                        extracted_parts = parse_supplier_row(supplier, cells)
+                                        for part in extracted_parts:
+                                            p_name, p_price_str, p_unit_str = part
+                                            if len(clean_string(p_name)) > 2: 
+                                                origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(p_name, p_price_str, p_unit_str)
+                                                if price_lb and price_kg:
+                                                    display_unit = unit if unit == "箱/件" else "LB"
+                                                    cloud_db.append({
+                                                        "供應商": supplier, "產地": origin, "品牌": brand,
+                                                        "品名(純)": clean_pname, "包裝規格": spec,
+                                                        "原始價格": f"${price_lb}/{display_unit}",
+                                                        "換算價 ($/LB)": price_lb, "換算價 ($/KG)": price_kg, 
+                                                        "來源檔案": file['name'],
+                                                        "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                                    })
+                    
+                    search_ph2.empty()
+                    
+                    filtered_cloud = []
+                    for item in cloud_db:
+                        if any(alias in item["search_string"] for alias in search_aliases):
+                            if selected_origins and item["產地"] not in selected_origins: continue
+                            filtered_cloud.append(item)
+
+                    if filtered_cloud:
+                        df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
+                        cheapest_cloud = df_cloud.iloc[0]
+                        
+                        st.markdown(f"""
+<div style='background-color:#e3f2fd !important; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'>
+    <span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span>
+    <h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3>
+    <h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
+</div>
+""", unsafe_allow_html=True)
+                        
+                        for _, row in df_cloud.iterrows():
+                            diff = row['換算價 ($/LB)'] - cheapest_cloud['換算價 ($/LB)']
+                            diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
+                            st.markdown(f"""
+<div class="product-card">
+    <div class="product-card-header">
+        <span class="product-card-title">【{row['供應商']}】 {row['品名(純)']}</span>
+        <span class="badge" style="background-color: #E0E0E0 !important; color: #333333 !important;">{diff_text}</span>
+    </div>
+    <div class="product-card-body">
+        產地: <span style="color:#0066cc; font-weight:bold;">{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br>
+        <span style="font-size:10px; color:#888888 !important;">來源檔: {row['來源檔案']}</span>
+    </div>
+    <div class="product-card-price-row">
+        <span class="product-card-price">${row['換算價 ($/LB)']:.1f} / LB</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+                    else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
+            except Exception as e: 
+                search_ph2.empty()
+                st.error(f"雲端解剖失敗：{e}")
