@@ -27,14 +27,12 @@ components.html(
     """
     <script>
     const stopC = function(e) {
-        if (e.key.toLowerCase() === 'c') {
-            // 允許在輸入框內打字，但阻止 Streamlit 攔截快捷鍵
+        if (e.key === 'c' || e.key === 'C') {
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                 e.stopImmediatePropagation();
             }
         }
     };
-    // 在最高層級的捕獲階段 (Capture phase) 強制攔截
     window.parent.document.addEventListener('keydown', stopC, true);
     window.document.addEventListener('keydown', stopC, true);
     </script>
@@ -43,7 +41,7 @@ components.html(
 )
 
 # ==========================================
-# 🎨 完美 CSS 
+# 🎨 完美 CSS (包含 Tab 3 的採購分析卡片)
 # ==========================================
 hide_st_style = """
 <style>
@@ -53,52 +51,47 @@ hide_st_style = """
     [data-testid="stStatusWidget"] { visibility: hidden; display: none !important; }
 
     :root, .stApp, [data-testid="stAppViewContainer"] {
-        --background-color: #FFFFFF !important;
-        --secondary-background-color: #F8F9FA !important;
-        --text-color: #111111 !important;
-        background-color: #FFFFFF !important; color: #111111 !important;
+        --background-color: #FFFFFF !important; --secondary-background-color: #F8F9FA !important;
+        --text-color: #111111 !important; background-color: #FFFFFF !important; color: #111111 !important;
     }
-    [data-testid="stSidebar"], .stSidebar {
-        background-color: #F8F9FA !important; border-right: 1px solid #E0E0E0 !important;
-    }
-    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span, .stApp label {
-        color: #111111 !important;
-    }
+    [data-testid="stSidebar"], .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #E0E0E0 !important; }
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span, .stApp label { color: #111111 !important; }
+    
     div[data-testid="stForm"] {
         background-color: #FFFFFF !important; border: 1px solid #CCCCCC !important;
         border-radius: 12px !important; padding: 30px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
     }
-    .stApp input, .stApp select, [data-baseweb="select"] {
-        background-color: #F9F9F9 !important; color: #111111 !important; border-color: #CCCCCC !important;
-    }
+    .stApp input, .stApp select, [data-baseweb="select"] { background-color: #F9F9F9 !important; color: #111111 !important; border-color: #CCCCCC !important; }
+    
     .stButton > button, div[data-testid="stForm"] button {
         background-color: #1F77B4 !important; color: #FFFFFF !important; border: none !important;
         border-radius: 6px !important; font-weight: bold !important; box-shadow: 0 2px 5px rgba(31, 119, 180, 0.3) !important;
     }
-    .stButton > button:hover, div[data-testid="stForm"] button:hover { 
-        background-color: #155B8C !important; color: #FFFFFF !important;
-    }
+    .stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #155B8C !important; color: #FFFFFF !important; }
     button[title="View fullscreen"] { display: none !important; }
 
     .product-card {
         padding: 12px 15px !important; border: 1px solid #DEDEDE !important; 
         border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important;
     }
-    .product-card-header {
-        display: flex !important; justify-content: space-between !important; align-items: center !important;
-        border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important;
-    }
+    .product-card-header { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important; }
     .product-card-title { font-size: 16px !important; font-weight: 900 !important; color: #111111 !important; margin: 0 !important; }
     .product-card-body { font-size: 12px !important; color: #666666 !important; line-height: 1.6 !important; }
-    .product-card-price-row {
-        display: flex !important; justify-content: space-between !important; align-items: center !important; margin-top: 6px !important;
-    }
+    .product-card-price-row { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-top: 6px !important; }
     .product-card-price { color: #D9534F !important; font-size: 18px !important; font-weight: bold !important; }
-    .badge { 
-        padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; 
-        background-color: #E6F7FF !important; color: #0066CC !important; 
-    }
+    
+    .badge { padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; background-color: #E6F7FF !important; color: #0066CC !important; }
     .badge-danger { background-color: #FFEEEE !important; color: #D9534F !important; }
+
+    /* Tab 3 入貨分析專用卡片 */
+    .bulk-card { border: 2px solid #1F77B4; border-radius: 10px; padding: 15px; margin-bottom: 15px; background-color: #F4F9FC; }
+    .bulk-header { font-size: 18px; font-weight: 900; color: #1F77B4; border-bottom: 2px solid #1F77B4; padding-bottom: 8px; margin-bottom: 10px; }
+    .bulk-section { font-size: 14px; color: #333; margin-bottom: 10px; line-height: 1.6; }
+    .bulk-price-tag { display: inline-block; background: #fff; border: 1px solid #ddd; padding: 4px 8px; border-radius: 5px; margin: 2px 4px 2px 0; font-size: 13px; font-weight: bold; }
+    .bulk-cheapest { border-color: #D9534F; color: #D9534F; }
+    .bulk-history { background: #fff; padding: 10px; border-radius: 6px; border: 1px dashed #bbb; margin-bottom: 10px; }
+    .bulk-conclusion { background: #E8F5E9; padding: 10px; border-radius: 6px; color: #2E7D32; font-weight: bold; border-left: 5px solid #4CAF50; }
+    .bulk-warning { background: #FFF3E0; padding: 10px; border-radius: 6px; color: #E65100; font-weight: bold; border-left: 5px solid #FF9800; }
     
     @keyframes wave-animation { 0%, 40%, 100% { transform: translateY(0); } 20% { transform: translateY(-12px); color: #1F77B4; } }
     .wave-text { font-size: 22px; font-weight: bold; text-align: center; padding: 40px; color: #555555; }
@@ -108,7 +101,7 @@ hide_st_style = """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
 def get_wavy_loading_html():
-    msgs = [["正","在","為","你","制","作"," 🍣","🌮","🍧","🍜","🥗"," 中..."], ["正","在","飼","養"," 🐂","🐖","🐓"," 中..."]]
+    msgs = [["正","在","為","你","制","作"," 🍣","🌮","🍧","🍜","🥗"," 中..."], ["大","廚","正","在","火","速","切","肉"," 🔪","🥩","🏃‍♂️"," 中..."]]
     chars = random.choice(msgs)
     spans = "".join([f"<span style='animation-delay: {i*0.1}s'>{c}</span>" for i, c in enumerate(chars)])
     return f"<div class='wave-text'>{spans}</div>"
@@ -124,7 +117,6 @@ def check_password():
                 password = st.text_input("🔑 密碼", type="password")
                 st.markdown("<br>", unsafe_allow_html=True)
                 submitted = st.form_submit_button("🚀 登入 / Enter", use_container_width=True)
-                
                 if submitted:
                     if not username.strip(): st.warning("⚠️ 請填寫使用者名稱！")
                     elif password == "Meat2026":
@@ -153,6 +145,19 @@ loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
 target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
 loading_ph.empty()
 
+# 預先處理歷史大數據，供全系統使用
+parsed_history = []
+if len(hist_vals) > 1:
+    for hr in hist_vals[1:]:
+        if len(hr) >= 6:
+            try:
+                date_str = hr[1].split()[0] if " " in hr[1] else hr[1]
+                q_date = datetime.strptime(date_str, "%Y-%m-%d")
+                sku = str(hr[3] if len(hr) >= 7 else hr[2]).strip()
+                price = float(hr[5] if len(hr) >= 7 else hr[4])
+                parsed_history.append({'date': q_date, 'sku': sku, 'price': price})
+            except: pass
+
 with st.sidebar:
     st.markdown(f"### 👋 歡迎回來, **{st.session_state.get('username', 'User')}**!")
     st.markdown("---")
@@ -169,9 +174,10 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.8 (終極無 Bug 實戰版)")
+    st.caption("版本號: v12.0 (大規模入貨分析版)")
 
-tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
+# 💡 新增 Tab 3
+tab1, tab2, tab3 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析"])
 
 # ----------------------------------------------------
 # 📌 分頁一：一鍵更新報價
@@ -211,19 +217,13 @@ with tab1:
                 
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
-                thirty_days_ago = datetime.now() - timedelta(days=30)
+                
+                d30 = datetime.now() - timedelta(days=30)
                 history_lows = {}
-                if len(hist_vals) > 1:
-                    for hr in hist_vals[1:]:
-                        if len(hr) >= 6:
-                            date_str = hr[0].split()[0] if " " in hr[0] else hr[0]
-                            try:
-                                rec_date = datetime.strptime(date_str, "%Y-%m-%d")
-                                if rec_date >= thirty_days_ago:
-                                    h_sku = str(hr[3] if len(hr) >= 7 else hr[2]).strip()
-                                    h_price_lb = float(hr[5] if len(hr) >= 7 else hr[4])
-                                    if h_sku not in history_lows or h_price_lb < history_lows[h_sku]: history_lows[h_sku] = h_price_lb
-                            except: pass
+                for x in parsed_history:
+                    if x['date'] >= d30:
+                        if x['sku'] not in history_lows or x['price'] < history_lows[x['sku']]:
+                            history_lows[x['sku']] = x['price']
 
                 all_preview = []
                 for sheet_name, all_vals in cat_data.items():
@@ -327,8 +327,8 @@ with tab1:
                 df_preview,
                 column_config={
                     "✔️ 寫入": st.column_config.CheckboxColumn("✔️ 寫入 (勾選)", help="取消勾選則不更新此產品"),
-                    "🛑 斷貨": st.column_config.CheckboxColumn("🛑 斷貨", help="勾選後，系統將強制以 Sold out 寫入，無視右方填寫的價錢"),
-                    "✏️ 手動新價(LB)": st.column_config.NumberColumn("✏️ 手動新價(LB)", format="%.1f", help="若價格有誤，可直接點擊修改"),
+                    "🛑 斷貨": st.column_config.CheckboxColumn("🛑 斷貨", help="勾選後，系統將強制以 Sold out 寫入"),
+                    "✏️ 手動新價(LB)": st.column_config.NumberColumn("✏️ 手動新價(LB)", format="%.1f", help="可直接點擊修改"),
                     "target_row": None, "lb_col": None, "kg_col": None, "sheet_name": None, "sort_key": None
                 },
                 disabled=["SKU", "產品原文", "舊價(LB)", "變動狀態", "差額", "追蹤行蹤"],
@@ -359,17 +359,11 @@ with tab1:
                     bg_color = color(1.0, 0.6, 0.6) if "🚨" in row["變動狀態"] else color(0.8, 1.0, 0.8) if "📉" in row["變動狀態"] else color(1.0, 0.8, 0.8) if "📈" in row["變動狀態"] else color(0.9, 0.9, 0.9) if "🛑" in row["變動狀態"] else color(1.0, 0.95, 0.6) 
                     fmt = cellFormat(backgroundColor=bg_color)
                     
-                    if row["🛑 斷貨"]:
-                        val_lb = "Sold out"
-                        val_kg = "Sold out"
+                    if row["🛑 斷貨"]: val_lb = "Sold out"; val_kg = "Sold out"
                     else:
                         manual_price = row["✏️ 手動新價(LB)"]
-                        if pd.isna(manual_price) or float(manual_price) <= 0.0:
-                            val_lb = "Sold out"
-                            val_kg = "Sold out"
-                        else:
-                            val_lb = float(manual_price)
-                            val_kg = round(val_lb * 2.2046, 1)
+                        if pd.isna(manual_price) or float(manual_price) <= 0.0: val_lb = "Sold out"; val_kg = "Sold out"
+                        else: val_lb = float(manual_price); val_kg = round(val_lb * 2.2046, 1)
                     
                     if row["lb_col"] != -1:
                         cell_a1 = gspread.utils.rowcol_to_a1(row["target_row"], row["lb_col"])
@@ -388,7 +382,7 @@ with tab1:
                     fetch_all_google_data.clear() 
                     loading_ph3.empty()
                     st.balloons()
-                    st.success(f"🎉 成功寫入 {update_count} 筆資料至 Google 母表！")
+                    st.success(f"🎉 成功寫入 {update_count} 筆資料！")
                     st.session_state['preview_data'] = None
                     time.sleep(1.5)
                     st.rerun()
@@ -397,7 +391,7 @@ with tab1:
                     st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：搜尋 
+# 📌 分頁二：日常搜尋
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -428,19 +422,6 @@ with tab2:
         with sub_tab1:
             search_ph1 = st.empty()
             search_ph1.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-            
-            history_prices = {}
-            if len(hist_vals) > 1:
-                for hr in hist_vals[1:]:
-                    if len(hr) >= 6:
-                        date_str = hr[1].split()[0] if " " in hr[1] else hr[1] 
-                        try:
-                            rec_date = datetime.strptime(date_str, "%Y-%m-%d")
-                            h_sku = str(hr[3] if len(hr) >= 7 else hr[2]).strip()
-                            h_price_lb = float(hr[5] if len(hr) >= 7 else hr[4])
-                            if h_sku not in history_prices: history_prices[h_sku] = []
-                            history_prices[h_sku].append({'date': rec_date, 'price': h_price_lb})
-                        except: pass
 
             d30 = datetime.now() - timedelta(days=30)
             d60 = datetime.now() - timedelta(days=60)
@@ -474,35 +455,24 @@ with tab2:
                                 nums = re.findall(r'\d+\.?\d*', p_val_str)
                                 
                                 is_sold_out_now = "sold out" in p_val_str.lower() or not nums
-                                hist_alert = ""
-                                price_lb_numeric = 99999.9 
-                                display_price = "Sold out"
+                                hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
                                 
-                                if sku in history_prices:
-                                    past_records = sorted(history_prices[sku], key=lambda x: x['date'], reverse=True)
-                                    valid_past_prices = [x['price'] for x in past_records if x['price'] > 0]
-                                    
-                                    if is_sold_out_now and len(valid_past_prices) > 0:
-                                        hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
-                                    elif not is_sold_out_now:
-                                        display_price = round(float(nums[0]), 1)
-                                        price_lb_numeric = display_price
-                                        p30 = [x for x in valid_past_prices if past_records[valid_past_prices.index(x)]['date'] >= d30]
-                                        p60 = [x for x in valid_past_prices if past_records[valid_past_prices.index(x)]['date'] >= d60]
-                                        p90 = [x for x in valid_past_prices if past_records[valid_past_prices.index(x)]['date'] >= d90]
-                                        if p90 and display_price <= min(p90): hist_alert = "🔥🔥🔥 90天新低"
-                                        elif p60 and display_price <= min(p60): hist_alert = "🔥🔥 60天新低"
-                                        elif p30 and display_price <= min(p30): hist_alert = "🔥 30天新低"
-                                
-                                if not is_sold_out_now and not hist_alert:
-                                    display_price = round(float(nums[0]), 1)
-                                    price_lb_numeric = display_price
+                                valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
+                                if is_sold_out_now and len(valid_past_prices) > 0:
+                                    hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
+                                elif not is_sold_out_now:
+                                    display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
+                                    p30 = [x['price'] for x in parsed_history if x['sku'] == sku and x['date'] >= d30 and x['price'] > 0]
+                                    p60 = [x['price'] for x in parsed_history if x['sku'] == sku and x['date'] >= d60 and x['price'] > 0]
+                                    p90 = [x['price'] for x in parsed_history if x['sku'] == sku and x['date'] >= d90 and x['price'] > 0]
+                                    if p90 and display_price <= min(p90): hist_alert = "🔥🔥🔥 90天新低"
+                                    elif p60 and display_price <= min(p60): hist_alert = "🔥🔥 60天新低"
+                                    elif p30 and display_price <= min(p30): hist_alert = "🔥 30天新低"
                                 
                                 if display_price != "Sold out" or hist_alert:
                                     compare_results.append({
                                         "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
-                                        "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric,
-                                        "歷史低價提醒": hist_alert
+                                        "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
                                     })
             search_ph1.empty()
                                     
@@ -510,16 +480,14 @@ with tab2:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
                 cheapest = df_compare.iloc[0]
                 
-                # 💡 絕對單行字串，100% 免疫 Markdown 解析 Bug
+                # 💡 強制單行字串
                 if cheapest['每磅均價 ($/LB)'] != "Sold out":
-                    html_cheaper = f"<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'><span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span><h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3><h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>"
-                    st.markdown(html_cheaper, unsafe_allow_html=True)
+                    st.markdown(f"<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'><span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span><h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3><h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>", unsafe_allow_html=True)
                 
                 for _, row in df_compare.iterrows():
                     is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
                     badge_class = "badge badge-danger" if is_soldout_card else "badge"
                     alert_html = f"<span class='{badge_class}'>{row['歷史低價提醒']}</span>" if row['歷史低價提醒'] else ""
-                    
                     diff_text = ""
                     if not is_soldout_card and cheapest['每磅均價 ($/LB)'] != "Sold out":
                         diff = row['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
@@ -528,12 +496,10 @@ with tab2:
                     price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     price_color = "#999999" if is_soldout_card else "#D9534F"
                     
-                    # 💡 絕對單行字串，100% 免疫 Markdown 解析 Bug
+                    # 💡 強制單行字串
                     diff_html = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
-                    html_card = f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span>{diff_html}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='product-card-price' style='color: {price_color} !important;'>{price_display}</span>{alert_html}</div></div>"
-                    st.markdown(html_card, unsafe_allow_html=True)
-            else: 
-                st.warning("🔍 沒找到符合條件的報價。")
+                    st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span>{diff_html}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='product-card-price' style='color: {price_color} !important;'>{price_display}</span>{alert_html}</div></div>", unsafe_allow_html=True)
+            else: st.warning("🔍 沒找到符合條件的報價。")
 
         with sub_tab2:
             st.info("💡 提示：雲端盲掃模式因沒有預先設定的分類，搜尋將會比對所有找到的內容。")
@@ -541,15 +507,10 @@ with tab2:
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
-                results = drive_service.files().list(
-                    q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", 
-                    fields="files(id, name, createdTime)"
-                ).execute()
+                results = drive_service.files().list(q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", fields="files(id, name, createdTime)").execute()
                 files = results.get('files', [])
-                
                 if not files: 
-                    search_ph2.empty()
-                    st.warning("資料夾內沒有 PDF。")
+                    search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
                 else:
                     supplier_files = {}
                     for f in files:
@@ -557,11 +518,7 @@ with tab2:
                         sup = next((s for kw, s in FILENAME_MAPPING.items() if kw in fname), "未知供應商")
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
-                        
-                    files_to_scan = []
-                    for sup, flist in supplier_files.items():
-                        flist.sort(key=lambda x: x.get('createdTime', ''), reverse=True)
-                        files_to_scan.append(flist[0]) 
+                    files_to_scan = [flist[0] for flist in supplier_files.values()] 
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
                     cloud_db = []
@@ -569,8 +526,7 @@ with tab2:
                     for idx, file in enumerate(files_to_scan):
                         supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
                         request = drive_service.files().get_media(fileId=file['id'])
-                        fh = io.BytesIO()
-                        downloader = MediaIoBaseDownload(fh, request)
+                        fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
                         done = False
                         while not done: _, done = downloader.next_chunk()
                         fh.seek(0)
@@ -586,41 +542,131 @@ with tab2:
                                             if len(clean_string(p_name)) > 2: 
                                                 origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(p_name, p_price_str, p_unit_str)
                                                 if price_lb and price_kg:
-                                                    display_unit = unit if unit == "箱/件" else "LB"
                                                     cloud_db.append({
-                                                        "供應商": supplier, "產地": origin, "品牌": brand,
-                                                        "品名(純)": clean_pname, "包裝規格": spec,
-                                                        "原始價格": f"${price_lb}/{display_unit}",
-                                                        "換算價 ($/LB)": price_lb, "換算價 ($/KG)": price_kg, 
-                                                        "來源檔案": file['name'],
-                                                        "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                                        "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                                        "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
                                                     })
-                    
                     search_ph2.empty()
                     
-                    filtered_cloud = []
-                    for item in cloud_db:
-                        if any(alias in item["search_string"] for alias in search_aliases):
-                            if selected_origins and item["產地"] not in selected_origins: continue
-                            filtered_cloud.append(item)
-
+                    filtered_cloud = [item for item in cloud_db if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins)]
                     if filtered_cloud:
                         df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
                         cheapest_cloud = df_cloud.iloc[0]
-                        
-                        # 💡 絕對單行字串
-                        html_cloud_cheaper = f"<div style='background-color:#e3f2fd !important; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'><span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span><h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3><h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>"
-                        st.markdown(html_cloud_cheaper, unsafe_allow_html=True)
-                        
+                        st.markdown(f"<div style='background-color:#e3f2fd !important; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'><span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span><h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3><h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>", unsafe_allow_html=True)
                         for _, row in df_cloud.iterrows():
                             diff = row['換算價 ($/LB)'] - cheapest_cloud['換算價 ($/LB)']
                             diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
-                            
-                            # 💡 絕對單行字串
                             diff_html_cloud = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
-                            html_cloud_card = f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span>{diff_html_cloud}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>"
-                            st.markdown(html_cloud_card, unsafe_allow_html=True)
+                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span>{diff_html_cloud}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: 
-                search_ph2.empty()
-                st.error(f"雲端解剖失敗：{e}")
+                search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
+
+# ----------------------------------------------------
+# 📌 分頁三：📊 智能入貨分析 (深度歷史掃描)
+# ----------------------------------------------------
+with tab3:
+    st.header("大規模入貨決策支援")
+    st.markdown("輸入你要大量入貨的 **精準 SKU** 或 **品名**，系統將提供跨供應商現價對比與深度歷史行情分析。")
+    
+    with st.form("bulk_form"):
+        col_b1, col_b2 = st.columns([4, 1])
+        with col_b1: bulk_query = st.text_input("🎯 輸入目標產品 (如: 11099, IBP CAB 西冷):", placeholder="輸入 SKU 或準確品名...")
+        with col_b2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            submit_bulk = st.form_submit_button("📊 深度分析", use_container_width=True)
+            
+    if submit_bulk and bulk_query:
+        bulk_q_clean = clean_string(bulk_query)
+        bulk_matches = []
+        
+        # 在母表中尋找符合的精準產品
+        for sn, all_vals in cat_data.items():
+            if not all_vals: continue
+            
+            sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
+            for c_idx, cv in enumerate(all_vals[1]):
+                c_str = clean_string(str(cv))
+                for sup_name, sup_headers in HEADER_MAP.items():
+                    if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
+
+            for row in all_vals[2:]:
+                if not row: continue
+                sku = str(row[0]).strip()
+                std_name = " ".join([str(row[i]).strip() for i in range(1, min(6, len(row))) if str(row[i]).strip()])
+                
+                if bulk_q_clean in clean_string(sku) or bulk_q_clean in clean_string(std_name):
+                    # 抓取該產品現時所有供應商的報價
+                    current_prices = {}
+                    for sup_name, cols in sup_cols.items():
+                        lb_col = cols["LB"]
+                        if lb_col != -1 and lb_col < len(row):
+                            val_str = str(row[lb_col]).strip()
+                            nums = re.findall(r'\d+\.?\d*', val_str)
+                            if nums and float(nums[0]) > 0 and "sold out" not in val_str.lower():
+                                current_prices[sup_name] = round(float(nums[0]), 1)
+                    
+                    bulk_matches.append({
+                        "sku": sku, "name": std_name, "origin": str(row[1]).strip() if len(row)>1 else "",
+                        "current_prices": current_prices
+                    })
+        
+        if not bulk_matches:
+            st.warning("沒有在母表中找到符合該關鍵字的產品。")
+        else:
+            bulk_ph = st.empty()
+            bulk_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            
+            # 開始深度分析每一個找到的產品
+            for item in bulk_matches:
+                sku = item['sku']
+                
+                # 歷史大數據過濾
+                sku_history = [x for x in parsed_history if x['sku'] == sku and x['price'] > 0]
+                sku_history.sort(key=lambda x: x['date'], reverse=True)
+                
+                last_3_prices = [x['price'] for x in sku_history[:3]]
+                min_last_3 = min(last_3_prices) if last_3_prices else None
+                
+                now = datetime.now()
+                p30 = [x['price'] for x in sku_history if x['date'] >= now - timedelta(days=30)]
+                p60 = [x['price'] for x in sku_history if x['date'] >= now - timedelta(days=60)]
+                p90 = [x['price'] for x in sku_history if x['date'] >= now - timedelta(days=90)]
+                
+                min_30 = min(p30) if p30 else None
+                min_60 = min(p60) if p60 else None
+                min_90 = min(p90) if p90 else None
+                
+                # 現時市場最低價
+                current_min = min(item['current_prices'].values()) if item['current_prices'] else None
+                
+                # 產生現價 HTML 標籤
+                current_tags_html = ""
+                if item['current_prices']:
+                    for sup, price in item['current_prices'].items():
+                        is_cheapest = (price == current_min)
+                        css_class = "bulk-price-tag bulk-cheapest" if is_cheapest else "bulk-price-tag"
+                        star = "🏆 " if is_cheapest else ""
+                        current_tags_html += f"<span class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
+                else:
+                    current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
+                
+                # AI 採購結論邏輯
+                conclusion_html = ""
+                if current_min is None:
+                    conclusion_html = f"<div class='bulk-warning'>⚠️ <b>系統分析：</b> 目前全行斷貨，無法入貨。</div>"
+                elif min_90 is None:
+                    conclusion_html = f"<div class='bulk-conclusion' style='color:#555; border-color:#999; background:#f0f0f0;'>ℹ️ <b>系統分析：</b> 此產品過去 90 天內無歷史報價紀錄，請依現價 ${current_min:.1f} 自行判斷。</div>"
+                else:
+                    if current_min <= min_90:
+                        conclusion_html = f"<div class='bulk-conclusion'>💡 <b>強烈建議入貨：</b> 現時最低價 (${current_min:.1f}) 已平過或等於 90 天內歷史低位！</div>"
+                    else:
+                        diff = current_min - min_90
+                        conclusion_html = f"<div class='bulk-warning'>⚠️ <b>建議觀望或講價：</b> 現時最低價 (${current_min:.1f}) 距離 90天低位 (${min_90:.1f}) 貴了 ${diff:.1f}。</div>"
+
+                # 💡 強制單行字串輸出卡片
+                bulk_card_html = f"<div class='bulk-card'><div class='bulk-header'>【{item['origin']}】 {item['name']} (SKU: {sku})</div><div class='bulk-section'><b>👀 現時全行各家報價：</b><br>{current_tags_html}</div><div class='bulk-history'><b>📈 歷史低價數據走勢：</b><br>📅 過去 3 次報價最低: {f'${min_last_3:.1f}' if min_last_3 else '無紀錄'}<br>📅 30天內絕對低位: {f'${min_30:.1f}' if min_30 else '無紀錄'}<br>📅 60天內絕對低位: {f'${min_60:.1f}' if min_60 else '無紀錄'}<br>📅 90天內絕對低位: {f'${min_90:.1f}' if min_90 else '無紀錄'}</div>{conclusion_html}</div>"
+                
+                st.markdown(bulk_card_html, unsafe_allow_html=True)
+                
+            bulk_ph.empty()
