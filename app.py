@@ -83,7 +83,6 @@ hide_st_style = """
     .badge { padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; background-color: #E6F7FF !important; color: #0066CC !important; }
     .badge-danger { background-color: #FFEEEE !important; color: #D9534F !important; }
 
-    /* Tab 3 入貨分析專用卡片 */
     .bulk-card { border: 2px solid #1F77B4; border-radius: 10px; padding: 15px; margin-bottom: 15px; background-color: #F4F9FC; }
     .bulk-header { font-size: 18px; font-weight: 900; color: #1F77B4; border-bottom: 2px solid #1F77B4; padding-bottom: 8px; margin-bottom: 10px; }
     .bulk-section { font-size: 14px; color: #333; margin-bottom: 10px; line-height: 1.6; }
@@ -145,7 +144,6 @@ loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
 target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
 loading_ph.empty()
 
-# 預先處理歷史大數據，供全系統使用
 parsed_history = []
 if len(hist_vals) > 1:
     for hr in hist_vals[1:]:
@@ -174,7 +172,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v12.1 (二階段篩選 + 真實歷史版)")
+    st.caption("版本號: v12.2 (形澧異常終極修正版)")
 
 tab1, tab2, tab3 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析"])
 
@@ -217,7 +215,6 @@ with tab1:
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
                 
-                # 更新歷史低位判斷
                 history_lows = {}
                 for x in parsed_history:
                     if x['sku'] not in history_lows or x['price'] < history_lows[x['sku']]:
@@ -252,6 +249,30 @@ with tab1:
                         if sku_db in extracted_items:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
+                            
+                            # 💡 終極防呆：形澧專屬的「由後往前」反向價格掃描器
+                            if selected_supplier == "形澧":
+                                matched_line_str = str(data.get('matched_line', '')).strip()
+                                if matched_line_str and matched_line_str != "-":
+                                    tokens = re.split(r'\s+|\|', matched_line_str)
+                                    for token in reversed(tokens):
+                                        token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                                        if token_clean:
+                                            # 若無英文字母，或包含小數點 (如 16.2)，則極可能是價錢
+                                            if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                                nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                                if nums:
+                                                    val = float(nums[0])
+                                                    if val > 0:
+                                                        # 防禦：如果是純重量 (如 2.7kg, 25kg) 就跳過
+                                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean:
+                                                            continue
+                                                        # 防禦：如果是 P450, P151 這類編號就跳過
+                                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE):
+                                                            continue
+                                                        raw_price = val
+                                                        break
+                            
                             status = "🆕 新增"; delta_str = "-"; is_anomaly = False
                             is_sold_out_detected = (unit == "SOLD_OUT")
                             
@@ -387,7 +408,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 (維持現有功能)
+# 📌 分頁二：日常搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -453,7 +474,6 @@ with tab2:
                                     hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
                                 elif not is_sold_out_now:
                                     display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
-                                    # 廢除 30/60/90天邏輯，改為直接對比歷史所有最低
                                     if valid_past_prices and display_price <= min(valid_past_prices):
                                         hist_alert = "🔥🔥 歷史低位"
                                 
@@ -599,7 +619,6 @@ with tab3:
         else:
             st.session_state['bulk_matches'] = bulk_matches
             
-    # 💡 關鍵！二階段動態篩選器 (獨立於表單之外)
     if st.session_state.get('bulk_matches'):
         matches = st.session_state['bulk_matches']
         
@@ -620,11 +639,9 @@ with tab3:
         if not filtered_matches:
             st.warning("⚠️ 此篩選條件下沒有產品，請放寬條件。")
         else:
-            # 渲染最終精準結果
             for item in filtered_matches:
                 sku = item['sku']
                 
-                # 真實歷史數據擷取 (按日期分組)
                 sku_history = [x for x in parsed_history if x['sku'] == sku and x['price'] > 0]
                 date_prices = {}
                 for rec in sku_history:
