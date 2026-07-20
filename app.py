@@ -21,29 +21,29 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🛑 封殺 CTRL+C 彈出 Clear Cache 視窗的隱形攔截器
+# 🛑 終極封殺 CTRL+C (Clear Cache) 的最高權限攔截器
 # ==========================================
 components.html(
     """
     <script>
-    const doc = window.parent.document;
-    doc.addEventListener('keydown', function(e) {
-        if (e.key === 'c' || e.key === 'C') {
-            const active = doc.activeElement;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
-            if (!e.ctrlKey && !e.metaKey) {
-                e.stopPropagation();
-                e.preventDefault();
+    const stopC = function(e) {
+        if (e.key.toLowerCase() === 'c') {
+            // 允許在輸入框內打字，但阻止 Streamlit 攔截快捷鍵
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+                e.stopImmediatePropagation();
             }
         }
-    }, true);
+    };
+    // 在最高層級的捕獲階段 (Capture phase) 強制攔截
+    window.parent.document.addEventListener('keydown', stopC, true);
+    window.document.addEventListener('keydown', stopC, true);
     </script>
     """,
     height=0, width=0
 )
 
 # ==========================================
-# 🎨 完美 CSS (修復深色模式衝突與排版)
+# 🎨 完美 CSS 
 # ==========================================
 hide_st_style = """
 <style>
@@ -169,7 +169,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.7 (終極無 Bug 實戰版)")
+    st.caption("版本號: v11.8 (終極無 Bug 實戰版)")
 
 tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
 
@@ -413,7 +413,6 @@ with tab2:
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
         
-        # 💡 只保留最精準的靜態字典，徹底刪除無限放大的動態擴展，確保搜尋範圍清爽準確
         STATIC_DICT = {
             "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
             "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
@@ -511,15 +510,10 @@ with tab2:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
                 cheapest = df_compare.iloc[0]
                 
+                # 💡 絕對單行字串，100% 免疫 Markdown 解析 Bug
                 if cheapest['每磅均價 ($/LB)'] != "Sold out":
-                    # 💡 HTML 靠左對齊防 Markdown 解析錯誤
-                    st.markdown(f"""
-<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'>
-    <span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span>
-    <h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3>
-    <h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
-</div>
-""", unsafe_allow_html=True)
+                    html_cheaper = f"<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'><span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span><h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3><h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>"
+                    st.markdown(html_cheaper, unsafe_allow_html=True)
                 
                 for _, row in df_compare.iterrows():
                     is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
@@ -534,26 +528,13 @@ with tab2:
                     price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     price_color = "#999999" if is_soldout_card else "#D9534F"
                     
-                    # 💡 HTML 靠左對齊防 Markdown 解析錯誤
-                    st.markdown(f"""
-<div class="product-card">
-    <div class="product-card-header">
-        <span class="product-card-title">【{row['供應商']}】 {row['標準品名']}</span>
-        {f'<span class="badge" style="background-color: #E0E0E0 !important; color: #333333 !important;">{diff_text}</span>' if diff_text else ''}
-    </div>
-    <div class="product-card-body">
-        產地: <span style="color:#0066cc; font-weight:bold;">{row['產地']}</span> | SKU: {row['SKU']}
-    </div>
-    <div class="product-card-price-row">
-        <span class="product-card-price" style="color: {price_color} !important;">{price_display}</span>
-        {alert_html}
-    </div>
-</div>
-""", unsafe_allow_html=True)
+                    # 💡 絕對單行字串，100% 免疫 Markdown 解析 Bug
+                    diff_html = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
+                    html_card = f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span>{diff_html}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='product-card-price' style='color: {price_color} !important;'>{price_display}</span>{alert_html}</div></div>"
+                    st.markdown(html_card, unsafe_allow_html=True)
             else: 
                 st.warning("🔍 沒找到符合條件的報價。")
 
-        # 💡 完美補回所有雲端盲掃邏輯
         with sub_tab2:
             st.info("💡 提示：雲端盲掃模式因沒有預先設定的分類，搜尋將會比對所有找到的內容。")
             search_ph2 = st.empty()
@@ -627,32 +608,18 @@ with tab2:
                         df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
                         cheapest_cloud = df_cloud.iloc[0]
                         
-                        st.markdown(f"""
-<div style='background-color:#e3f2fd !important; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'>
-    <span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span>
-    <h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3>
-    <h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style="font-size:14px; font-weight:normal;">/ LB</span></h2>
-</div>
-""", unsafe_allow_html=True)
+                        # 💡 絕對單行字串
+                        html_cloud_cheaper = f"<div style='background-color:#e3f2fd !important; padding: 15px; border-radius: 8px; border-left: 5px solid #1976d2; margin-bottom: 15px;'><span style='font-size:12px; color:#1565c0; font-weight:bold;'>🏆 雲端未建檔最平首選</span><h3 style='margin:5px 0 0 0; color:#0d47a1; font-size:18px;'>【{cheapest_cloud['供應商']}】 {cheapest_cloud['品名(純)']}</h3><h2 style='margin:5px 0 0 0; color:#1565c0; font-size:24px; font-weight:900;'>${cheapest_cloud['換算價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>"
+                        st.markdown(html_cloud_cheaper, unsafe_allow_html=True)
                         
                         for _, row in df_cloud.iterrows():
                             diff = row['換算價 ($/LB)'] - cheapest_cloud['換算價 ($/LB)']
                             diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
-                            st.markdown(f"""
-<div class="product-card">
-    <div class="product-card-header">
-        <span class="product-card-title">【{row['供應商']}】 {row['品名(純)']}</span>
-        <span class="badge" style="background-color: #E0E0E0 !important; color: #333333 !important;">{diff_text}</span>
-    </div>
-    <div class="product-card-body">
-        產地: <span style="color:#0066cc; font-weight:bold;">{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br>
-        <span style="font-size:10px; color:#888888 !important;">來源檔: {row['來源檔案']}</span>
-    </div>
-    <div class="product-card-price-row">
-        <span class="product-card-price">${row['換算價 ($/LB)']:.1f} / LB</span>
-    </div>
-</div>
-""", unsafe_allow_html=True)
+                            
+                            # 💡 絕對單行字串
+                            diff_html_cloud = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
+                            html_cloud_card = f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span>{diff_html_cloud}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>"
+                            st.markdown(html_cloud_card, unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: 
                 search_ph2.empty()
