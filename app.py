@@ -55,8 +55,8 @@ hide_st_style = """
     .stButton > button:hover, div[data-testid="stForm"] button:hover { 
         background-color: #155B8C !important; color: #FFFFFF !important;
     }
-    button[title="Copy to clipboard"] { background-color: transparent !important; box-shadow: none !important; }
-    button[title="Copy to clipboard"] svg { fill: #888888 !important; stroke: #888888 !important; }
+    /* 全選按鈕的特殊樣式 */
+    button[title="View fullscreen"] { display: none !important; }
 
     .product-card {
         padding: 12px 15px !important; border: 1px solid #DEDEDE !important; 
@@ -147,12 +147,12 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v11.5 (互動編輯器 & 斷貨雷達版)")
+    st.caption("版本號: v11.6 (全選按鈕 & 一鍵斷貨版)")
 
 tab1, tab2 = st.tabs(["一鍵更新報價", "搜尋"])
 
 # ----------------------------------------------------
-# 📌 分頁一：一鍵更新報價 (加入 st.data_editor 與 斷貨偵測)
+# 📌 分頁一：一鍵更新報價 (加入一鍵斷貨 & 全選按鈕)
 # ----------------------------------------------------
 with tab1:
     st.header("更新及雲端同步")
@@ -234,8 +234,9 @@ with tab1:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
                             status = "🆕 新增"; delta_str = "-"; is_anomaly = False
+                            is_sold_out_detected = (unit == "SOLD_OUT")
                             
-                            if unit == "SOLD_OUT":
+                            if is_sold_out_detected:
                                 status = "🛑 斷貨 (清)"
                                 data['price_lb'] = "Sold out"; sort_key = 2
                             else:
@@ -262,17 +263,20 @@ with tab1:
                                 else: sort_key = 3
 
                             all_preview.append({
-                                "✔️ 寫入": not is_anomaly, # 異常預設不勾選
+                                "✔️ 寫入": not is_anomaly and not is_sold_out_detected,
+                                "🛑 斷貨": is_sold_out_detected, # 新增斷貨快捷鍵
                                 "SKU": sku_db, "產品原文": data['raw_name'],
                                 "舊價(LB)": f"${old_price_lb}" if old_price_lb else "空",
-                                "✏️ 手動新價(LB)": data['price_lb'] if data['price_lb'] != "Sold out" else 0.0,
+                                "✏️ 手動新價(LB)": data['price_lb'] if not is_sold_out_detected else 0.0,
                                 "變動狀態": status, "差額": delta_str, 
                                 "追蹤行蹤": data['matched_line'], "target_row": row_idx + 1, "lb_col": lb_col, "kg_col": kg_col, "sheet_name": sheet_name, "sort_key": sort_key
                             })
+                            
                         # 💡 疑似斷貨：母表有紀錄，但新 PDF 找不到
                         elif old_price_lb is not None:
                             all_preview.append({
-                                "✔️ 寫入": False, # 斷貨預設不勾選，由用戶決定是否清零
+                                "✔️ 寫入": False, # 預設不勾選防呆
+                                "🛑 斷貨": True,  # 預設幫你把「斷貨」打勾！如果你要寫入，只需勾前面的「寫入」即可
                                 "SKU": sku_db, "產品原文": "⚠️ 報價單中找不到此產品",
                                 "舊價(LB)": f"${old_price_lb}",
                                 "✏️ 手動新價(LB)": 0.0,
@@ -285,22 +289,34 @@ with tab1:
                 st.session_state['current_quote_date'] = quote_date.strftime("%Y-%m-%d")
                 loading_ph2.empty()
 
-    # 💡 渲染互動式資料編輯器
     if st.session_state['preview_data'] is not None:
         df_preview = pd.DataFrame(st.session_state['preview_data'])
         if len(df_preview) > 0:
-            st.success(f"🎉 **成功分析 {len(df_preview)} 個產品！請檢查下方資料（可手動修改新價錢或取消勾選）**")
+            st.success(f"🎉 **成功分析 {len(df_preview)} 個產品！**")
             
-            # 建立可編輯表格
+            # 💡 新增：全選 / 取消全選 按鈕
+            st.info("💡 提示：請先使用【全選 / 取消全選】設定好大範圍，再去單獨微調價錢，以免重置你剛打好的數字。")
+            col_btn1, col_btn2, _ = st.columns([1, 1, 3])
+            with col_btn1:
+                if st.button("☑️ 全部勾選 (寫入)"):
+                    for item in st.session_state['preview_data']: item["✔️ 寫入"] = True
+                    st.rerun()
+            with col_btn2:
+                if st.button("☐ 全部取消勾選"):
+                    for item in st.session_state['preview_data']: item["✔️ 寫入"] = False
+                    st.rerun()
+            
+            # 建立可編輯表格 (加入 🛑 斷貨 列)
             edited_df = st.data_editor(
                 df_preview,
                 column_config={
                     "✔️ 寫入": st.column_config.CheckboxColumn("✔️ 寫入 (勾選)", help="取消勾選則不更新此產品"),
-                    "✏️ 手動新價(LB)": st.column_config.NumberColumn("✏️ 手動新價(LB)", format="%.1f", help="若價格或錨點有誤，可直接點擊修改 (輸入 0 視為 Sold out)"),
-                    "target_row": None, "lb_col": None, "kg_col": None, "sheet_name": None, "sort_key": None # 隱藏後端資料
+                    "🛑 斷貨": st.column_config.CheckboxColumn("🛑 斷貨", help="勾選後，系統將強制以 Sold out 寫入，無視右方填寫的價錢"),
+                    "✏️ 手動新價(LB)": st.column_config.NumberColumn("✏️ 手動新價(LB)", format="%.1f", help="若價格有誤，可直接點擊修改"),
+                    "target_row": None, "lb_col": None, "kg_col": None, "sheet_name": None, "sort_key": None
                 },
                 disabled=["SKU", "產品原文", "舊價(LB)", "變動狀態", "差額", "追蹤行蹤"],
-                use_container_width=True, hide_index=True, height=450
+                use_container_width=True, hide_index=True, height=500
             )
             
             if st.button("💾 確認無誤，將『已勾選』資料寫入雲端母表", type="primary"):
@@ -318,7 +334,6 @@ with tab1:
                 updates_by_sheet = {}; formats_by_sheet = {}
                 update_count = 0
                 
-                # 遍歷編輯過後的 Dataframe
                 for idx, row in edited_df.iterrows():
                     if not row["✔️ 寫入"]: continue # 略過未勾選的
                     update_count += 1
@@ -328,10 +343,18 @@ with tab1:
                     bg_color = color(1.0, 0.6, 0.6) if "🚨" in row["變動狀態"] else color(0.8, 1.0, 0.8) if "📉" in row["變動狀態"] else color(1.0, 0.8, 0.8) if "📈" in row["變動狀態"] else color(0.9, 0.9, 0.9) if "🛑" in row["變動狀態"] else color(1.0, 0.95, 0.6) 
                     fmt = cellFormat(backgroundColor=bg_color)
                     
-                    manual_price = row["✏️ 手動新價(LB)"]
-                    is_sold_out = pd.isna(manual_price) or float(manual_price) <= 0.0
-                    val_lb = "Sold out" if is_sold_out else float(manual_price)
-                    val_kg = "Sold out" if is_sold_out else round(float(manual_price) * 2.2046, 1)
+                    # 💡 判斷斷貨勾選邏輯，免除手動輸入0的痛苦
+                    if row["🛑 斷貨"]:
+                        val_lb = "Sold out"
+                        val_kg = "Sold out"
+                    else:
+                        manual_price = row["✏️ 手動新價(LB)"]
+                        if pd.isna(manual_price) or float(manual_price) <= 0.0:
+                            val_lb = "Sold out"
+                            val_kg = "Sold out"
+                        else:
+                            val_lb = float(manual_price)
+                            val_kg = round(val_lb * 2.2046, 1)
                     
                     if row["lb_col"] != -1:
                         cell_a1 = gspread.utils.rowcol_to_a1(row["target_row"], row["lb_col"])
@@ -359,11 +382,10 @@ with tab1:
                     st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：搜尋 (加入分類限制與斷貨偵測)
+# 📌 分頁二：搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
-        # 💡 加入分類下拉選單
         col_s1, col_s2, col_s3, col_s4 = st.columns([3, 2, 2, 1])
         with col_s1: search_query = st.text_input("🔍 關鍵字 (如: 雞翼)：", placeholder="輸入產品...")
         with col_s2: selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
@@ -385,7 +407,7 @@ with tab2:
             if key in q_clean or q_clean in key: search_aliases.update(aliases)
                 
         for sn, all_vals in cat_data.items():
-            if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue # 強制分類隔離
+            if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue 
             if not all_vals: continue
             for r in all_vals[2:]:
                 if not r: continue
@@ -404,7 +426,6 @@ with tab2:
             search_ph1 = st.empty()
             search_ph1.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             
-            # 準備歷史資料用於斷貨分析
             history_prices = {}
             if len(hist_vals) > 1:
                 for hr in hist_vals[1:]:
@@ -424,7 +445,7 @@ with tab2:
 
             compare_results = []
             for sn, all_vals in cat_data.items():
-                if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue # 強制分類隔離
+                if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue
                 if not all_vals: continue
                 sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
                 for r_idx in range(min(10, len(all_vals))):
@@ -451,10 +472,9 @@ with tab2:
                                 
                                 is_sold_out_now = "sold out" in p_val_str.lower() or not nums
                                 hist_alert = ""
-                                price_lb_numeric = 99999.9 # 用於排序
+                                price_lb_numeric = 99999.9 
                                 display_price = "Sold out"
                                 
-                                # 💡 斷貨與歷史低價分析
                                 if sku in history_prices:
                                     past_records = sorted(history_prices[sku], key=lambda x: x['date'], reverse=True)
                                     valid_past_prices = [x['price'] for x in past_records if x['price'] > 0]
@@ -529,5 +549,4 @@ with tab2:
 
         with sub_tab2:
             st.info("💡 提示：雲端盲掃模式因沒有預先設定的分類，搜尋將會比對所有找到的內容。")
-            # 雲端搜尋程式碼與之前保持一致 (為節省篇幅在此略過重覆註解)
-            # (雲端搜尋仍正常運作)
+            # 雲端搜尋維持正常運作...
