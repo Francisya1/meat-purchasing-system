@@ -138,7 +138,9 @@ FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-20
 
 loading_ph = st.empty()
 loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-target_dict, cat_data, hist_vals, global_origins = fetch_all_google_data()
+
+# 💡 Phase 2: 提取 ignore_dict (黑名單)
+target_dict, cat_data, hist_vals, global_origins, ignore_dict = fetch_all_google_data()
 loading_ph.empty()
 
 parsed_history = []
@@ -169,9 +171,8 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v13.0 (開發者防呆體檢版)")
+    st.caption("版本號: v14.0 (Phase 2 智能黑名單)")
 
-# 💡 加入第四個分頁 (Tab 4: 開發者專用)
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
 # ----------------------------------------------------
@@ -400,7 +401,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 
+# 📌 分頁二：日常搜尋
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -701,7 +702,7 @@ with tab4:
     st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
     
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
-    st.write("一鍵掃描 `Mapping` 分頁與四大母表，系統將為你找出人為輸入錯誤、幽靈 SKU 及類別衝突。")
+    st.write("一鍵掃描 `Mapping` 分頁與四大母表，找出人為輸入錯誤、幽靈 SKU 及類別衝突。")
     
     if st.button("🚀 立即執行全面體檢", use_container_width=True):
         loading_ph4 = st.empty()
@@ -725,32 +726,29 @@ with tab4:
         errors = []
         
         for idx, row in enumerate(mapping_data_raw):
-            excel_row = idx + 2 # Google Sheet Header is row 1
+            excel_row = idx + 2 
             sup = str(row.get('供應商', '')).strip()
             raw_name = str(row.get('供應商原文', '')).strip()
             sku = str(row.get('對應SKU', '')).strip()
             
-            # 1. 空白欄位檢查
             if not sup or not raw_name or not sku:
                 errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "❌ 欄位空白", "建議": "請補齊遺漏的欄位"})
                 continue
                 
-            # 2. 幽靈 SKU 檢查
             if sku not in valid_skus:
                 errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "👻 幽靈 SKU", "建議": "四大母表中找不到此 SKU"})
             
-            # 3. 肉類跨界衝突檢查
             name_clean = raw_name.lower()
-            if sku.startswith('1'): # 牛肉
+            if sku.startswith('1'): 
                 if any(x in name_clean for x in ['豬', 'pork', '雞', 'chicken', '羊', 'lamp', 'lamb']):
                     errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為牛)", "建議": "SKU為牛，品名卻包含其他肉類"})
-            elif sku.startswith('2'): # 豬肉
+            elif sku.startswith('2'): 
                 if any(x in name_clean for x in ['牛', 'beef', '雞', 'chicken', '羊', 'lamp', 'lamb']):
                     errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為豬)", "建議": "SKU為豬，品名卻包含其他肉類"})
-            elif sku.startswith('3'): # 雞肉
+            elif sku.startswith('3'): 
                 if any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '羊', 'lamp', 'lamb']):
                     errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為雞)", "建議": "SKU為雞，品名卻包含其他肉類"})
-            elif sku.startswith('4'): # 羊肉
+            elif sku.startswith('4'): 
                 if any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '雞', 'chicken']):
                     errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為羊)", "建議": "SKU為羊，品名卻包含其他肉類"})
         
@@ -762,4 +760,41 @@ with tab4:
             st.dataframe(df_errors, use_container_width=True, hide_index=True)
         else:
             st.balloons()
-            st.success("✅ 體檢完美通過！你的 Mapping 資料庫非常健康，沒有發現任何邏輯錯誤。")
+            st.success("✅ 體檢完美通過！沒有發現任何邏輯錯誤。")
+
+    st.markdown("---")
+    st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 管理")
+    st.write("設定不需要系統提醒或追蹤的產品（如包裝物料、運費等），為未來的「新品雷達」做好過濾準備。")
+    
+    if ignore_dict:
+        st.write("📋 **目前黑名單內容：**")
+        ignore_rows = []
+        for sup, vals in ignore_dict.items():
+            for v in vals:
+                ignore_rows.append({"供應商": sup, "忽略的原文關鍵字": v})
+        st.dataframe(pd.DataFrame(ignore_rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("目前沒有任何黑名單設定。")
+
+    with st.form("add_ignore_form"):
+        col_ig1, col_ig2 = st.columns([1, 2])
+        with col_ig1: ig_sup = st.selectbox("選擇供應商", ACTIVE_SUPPLIERS)
+        with col_ig2: ig_val = st.text_input("輸入要忽略的產品原文 / 關鍵字 (如: 膠袋, 運費)")
+        submit_ig = st.form_submit_button("➕ 加入黑名單", use_container_width=True)
+        
+        if submit_ig and ig_val:
+            gc, sh, _ = get_google_connection()
+            try:
+                ig_ws = sh.worksheet('Ignore_List')
+            except Exception:
+                st.error("❌ 找不到 `Ignore_List` 分頁！請確保你已經在 Google Excel 中建立了這個分頁。")
+                st.stop()
+            
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
+            ig_ws.append_row([ig_sup, ig_val, sys_today])
+            
+            fetch_all_google_data.clear()
+            st.success(f"✅ 已將 `{ig_val}` 加入 {ig_sup} 的黑名單！")
+            time.sleep(1.5)
+            st.rerun()
