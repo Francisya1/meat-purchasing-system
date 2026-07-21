@@ -172,12 +172,12 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v12.2 (形澧異常終極修正版)")
+    st.caption("版本號: v12.3 (Tab 3 智能搜尋引擎)")
 
 tab1, tab2, tab3 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析"])
 
 # ----------------------------------------------------
-# 📌 分頁一：一鍵更新報價
+# 📌 分頁一：一鍵更新報價 (維持完美不變)
 # ----------------------------------------------------
 with tab1:
     st.header("更新及雲端同步")
@@ -250,7 +250,6 @@ with tab1:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
                             
-                            # 💡 終極防呆：形澧專屬的「由後往前」反向價格掃描器
                             if selected_supplier == "形澧":
                                 matched_line_str = str(data.get('matched_line', '')).strip()
                                 if matched_line_str and matched_line_str != "-":
@@ -258,18 +257,13 @@ with tab1:
                                     for token in reversed(tokens):
                                         token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
                                         if token_clean:
-                                            # 若無英文字母，或包含小數點 (如 16.2)，則極可能是價錢
                                             if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
                                                 nums = re.findall(r'\d+\.\d+|\d+', token_clean)
                                                 if nums:
                                                     val = float(nums[0])
                                                     if val > 0:
-                                                        # 防禦：如果是純重量 (如 2.7kg, 25kg) 就跳過
-                                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean:
-                                                            continue
-                                                        # 防禦：如果是 P450, P151 這類編號就跳過
-                                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE):
-                                                            continue
+                                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
                                                         raw_price = val
                                                         break
                             
@@ -408,7 +402,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 
+# 📌 分頁二：日常搜尋 (維持完美不變)
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -568,7 +562,7 @@ with tab2:
                 search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
 
 # ----------------------------------------------------
-# 📌 分頁三：📊 智能入貨分析 (二階段篩選 + 真實報價歷史)
+# 📌 分頁三：📊 智能入貨分析 (移植智能搜尋字典)
 # ----------------------------------------------------
 with tab3:
     st.header("大規模入貨決策支援")
@@ -576,13 +570,26 @@ with tab3:
     
     with st.form("bulk_form"):
         col_b1, col_b2 = st.columns([4, 1])
-        with col_b1: bulk_query = st.text_input("🎯 第一步：搜尋目標產品 (如: 西冷, IBP):", placeholder="輸入任意關鍵字開始找尋...")
+        with col_b1: bulk_query = st.text_input("🎯 第一步：搜尋目標產品 (如: 雞翼, 西冷):", placeholder="輸入任意關鍵字開始找尋...")
         with col_b2:
             st.markdown("<br>", unsafe_allow_html=True)
             submit_bulk = st.form_submit_button("🔍 搜尋目標", use_container_width=True)
             
     if submit_bulk and bulk_query:
         bulk_q_clean = clean_string(bulk_query)
+        
+        # 💡 移植 Tab 2 的智能字典擴展邏輯
+        search_aliases = set([bulk_q_clean])
+        STATIC_DICT = {
+            "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
+            "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
+            "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"], "金錢展": ["金展", "金錢展", "金錢𦟌"], "肉眼": ["肉眼", "ribeye"]
+        }
+        for key, aliases in STATIC_DICT.items():
+            if key in bulk_q_clean or bulk_q_clean in key: search_aliases.update(aliases)
+            
+        st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}`")
+        
         bulk_matches = []
         
         for sn, all_vals in cat_data.items():
@@ -598,7 +605,11 @@ with tab3:
                 sku = str(row[0]).strip()
                 std_name = " ".join([str(row[i]).strip() for i in range(1, min(6, len(row))) if str(row[i]).strip()])
                 
-                if bulk_q_clean in clean_string(sku) or bulk_q_clean in clean_string(std_name):
+                clean_sku = clean_string(sku)
+                clean_std = clean_string(std_name)
+                
+                # 💡 使用 expanded aliases 來比對，達成與 Tab 2 一樣強大的搜尋能力
+                if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                     current_prices = {}
                     for sup_name, cols in sup_cols.items():
                         lb_col = cols["LB"]
