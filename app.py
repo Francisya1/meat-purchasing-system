@@ -41,7 +41,7 @@ components.html(
 )
 
 # ==========================================
-# 🎨 完美 CSS (包含 Tab 3 專用卡片美化)
+# 🎨 完美 CSS
 # ==========================================
 hide_st_style = """
 <style>
@@ -70,10 +70,7 @@ hide_st_style = """
     .stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #155B8C !important; color: #FFFFFF !important; }
     button[title="View fullscreen"] { display: none !important; }
 
-    .product-card {
-        padding: 12px 15px !important; border: 1px solid #DEDEDE !important; 
-        border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important;
-    }
+    .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; }
     .product-card-header { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important; }
     .product-card-title { font-size: 16px !important; font-weight: 900 !important; color: #111111 !important; margin: 0 !important; }
     .product-card-body { font-size: 12px !important; color: #666666 !important; line-height: 1.6 !important; }
@@ -172,12 +169,13 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v12.3 (Tab 3 智能搜尋引擎)")
+    st.caption("版本號: v13.0 (開發者防呆體檢版)")
 
-tab1, tab2, tab3 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析"])
+# 💡 加入第四個分頁 (Tab 4: 開發者專用)
+tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
 # ----------------------------------------------------
-# 📌 分頁一：一鍵更新報價 (維持完美不變)
+# 📌 分頁一：一鍵更新報價
 # ----------------------------------------------------
 with tab1:
     st.header("更新及雲端同步")
@@ -402,7 +400,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 (維持完美不變)
+# 📌 分頁二：日常搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -562,7 +560,7 @@ with tab2:
                 search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
 
 # ----------------------------------------------------
-# 📌 分頁三：📊 智能入貨分析 (移植智能搜尋字典)
+# 📌 分頁三：📊 智能入貨分析
 # ----------------------------------------------------
 with tab3:
     st.header("大規模入貨決策支援")
@@ -578,7 +576,6 @@ with tab3:
     if submit_bulk and bulk_query:
         bulk_q_clean = clean_string(bulk_query)
         
-        # 💡 移植 Tab 2 的智能字典擴展邏輯
         search_aliases = set([bulk_q_clean])
         STATIC_DICT = {
             "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
@@ -608,7 +605,6 @@ with tab3:
                 clean_sku = clean_string(sku)
                 clean_std = clean_string(std_name)
                 
-                # 💡 使用 expanded aliases 來比對，達成與 Tab 2 一樣強大的搜尋能力
                 if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                     current_prices = {}
                     for sup_name, cols in sup_cols.items():
@@ -695,3 +691,75 @@ with tab3:
 
                 bulk_card_html = f"<div class='bulk-card'><div class='bulk-header'>【{item['origin']}】 {item['name']} (SKU: {sku})</div><div class='bulk-section'><b>👀 現時全行各家報價：</b><br>{current_tags_html}</div><div class='bulk-history'><b>📈 過去 3 次真實報價紀錄：</b><br>{last_3_html}</div>{conclusion_html}</div>"
                 st.markdown(bulk_card_html, unsafe_allow_html=True)
+
+
+# ----------------------------------------------------
+# 📌 分頁四：⚙️ 系統管理與防呆中心 (開發者專用)
+# ----------------------------------------------------
+with tab4:
+    st.header("⚙️ 系統管理與防呆中心")
+    st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
+    
+    st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
+    st.write("一鍵掃描 `Mapping` 分頁與四大母表，系統將為你找出人為輸入錯誤、幽靈 SKU 及類別衝突。")
+    
+    if st.button("🚀 立即執行全面體檢", use_container_width=True):
+        loading_ph4 = st.empty()
+        loading_ph4.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+        
+        gc, sh, _ = get_google_connection()
+        try:
+            mapping_ws = sh.worksheet('Mapping')
+            mapping_data_raw = mapping_ws.get_all_records()
+        except Exception as e:
+            mapping_data_raw = []
+            st.error(f"讀取 Mapping 失敗: {e}")
+            
+        valid_skus = set()
+        for sn, vals in cat_data.items():
+            if vals and len(vals) > 2:
+                for r in vals[2:]:
+                    if r and str(r[0]).strip():
+                        valid_skus.add(str(r[0]).strip())
+                        
+        errors = []
+        
+        for idx, row in enumerate(mapping_data_raw):
+            excel_row = idx + 2 # Google Sheet Header is row 1
+            sup = str(row.get('供應商', '')).strip()
+            raw_name = str(row.get('供應商原文', '')).strip()
+            sku = str(row.get('對應SKU', '')).strip()
+            
+            # 1. 空白欄位檢查
+            if not sup or not raw_name or not sku:
+                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "❌ 欄位空白", "建議": "請補齊遺漏的欄位"})
+                continue
+                
+            # 2. 幽靈 SKU 檢查
+            if sku not in valid_skus:
+                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "👻 幽靈 SKU", "建議": "四大母表中找不到此 SKU"})
+            
+            # 3. 肉類跨界衝突檢查
+            name_clean = raw_name.lower()
+            if sku.startswith('1'): # 牛肉
+                if any(x in name_clean for x in ['豬', 'pork', '雞', 'chicken', '羊', 'lamp', 'lamb']):
+                    errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為牛)", "建議": "SKU為牛，品名卻包含其他肉類"})
+            elif sku.startswith('2'): # 豬肉
+                if any(x in name_clean for x in ['牛', 'beef', '雞', 'chicken', '羊', 'lamp', 'lamb']):
+                    errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為豬)", "建議": "SKU為豬，品名卻包含其他肉類"})
+            elif sku.startswith('3'): # 雞肉
+                if any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '羊', 'lamp', 'lamb']):
+                    errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為雞)", "建議": "SKU為雞，品名卻包含其他肉類"})
+            elif sku.startswith('4'): # 羊肉
+                if any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '雞', 'chicken']):
+                    errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為羊)", "建議": "SKU為羊，品名卻包含其他肉類"})
+        
+        loading_ph4.empty()
+        
+        if errors:
+            st.warning(f"⚠️ 體檢完成！共發現 **{len(errors)}** 個潛在問題。請回到 Google Excel 的 `Mapping` 分頁進行修正。")
+            df_errors = pd.DataFrame(errors)
+            st.dataframe(df_errors, use_container_width=True, hide_index=True)
+        else:
+            st.balloons()
+            st.success("✅ 體檢完美通過！你的 Mapping 資料庫非常健康，沒有發現任何邏輯錯誤。")
