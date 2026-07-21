@@ -128,7 +128,6 @@ HEADER_MAP = {
 }
 FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧" }
 
-# 💡 共用智能字典
 STATIC_DICT = {
     "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
     "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
@@ -168,7 +167,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v15.0 (Phase 3 智能收件箱版)")
+    st.caption("版本號: v16.0 (人性化 UI & 智能 Mapping)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -634,7 +633,7 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 (加入 Phase 3 智能收件箱)
+# 📌 分頁四：⚙️ 系統管理與防呆中心 (視覺化下拉選單 & 勾選防呆)
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
@@ -643,16 +642,19 @@ with tab4:
     st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
     st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來，並由 AI 為你建議對應的母表 SKU！")
     
-    # 💡 建立所有四大母表 SKU 的選項，給下拉選單使用
+    # 💡 重構下拉選單：加入肉類 Emoji 視覺化前綴，讓搜尋更人性化
     all_db_options = ["請選擇對應產品..."]
+    meat_prefixes = {'Beef': '🥩 牛肉', 'Pork': '🐷 豬肉', 'Chicken': '🐔 雞肉', 'Lamp': '🐑 羊肉'}
+    
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
+            prefix = meat_prefixes.get(sn, '🥩')
             for r in vals[2:]:
                 if not r: continue
                 sku = str(r[0]).strip()
                 if not sku: continue
                 std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
-                all_db_options.append(f"[{sku}] {std_name}")
+                all_db_options.append(f"{prefix} | [{sku}] {std_name}")
 
     with st.form("radar_form"):
         col_r1, col_r2 = st.columns([1, 2])
@@ -664,12 +666,11 @@ with tab4:
         radar_ph = st.empty()
         radar_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
         
-        from modules.pdf_xray import parse_supplier_row
+        from modules.pdf_xray import parse_supplier_row, deep_decode_item
         
         pdf_bytes = io.BytesIO(radar_file.read())
         unmapped_items = []
         
-        # 取得已知的 Mapping 和 黑名單
         existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
         ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
         
@@ -683,14 +684,19 @@ with tab4:
                             raw_name_text = part[0]
                             clean_raw = clean_string(raw_name_text)
                             
-                            if len(clean_raw) < 2: continue # 過濾掉太短的垃圾字元
+                            if len(clean_raw) < 2: continue 
                             
-                            # 核心過濾邏輯：是否已經 Mapped？是否在黑名單？
                             is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
                             is_ignored = any(ig in clean_raw for ig in ignored_items)
                             
                             if not is_mapped and not is_ignored:
-                                # 💡 AI 自動配對引擎
+                                # 💡 預覽 AI 試抓的價錢 (供用戶驗證)
+                                p_price_str = part[1]
+                                p_unit_str = part[2]
+                                _, _, _, _, _, price_lb, _ = deep_decode_item(raw_name_text, p_price_str, p_unit_str)
+                                preview_price = f"${price_lb} / LB" if price_lb else "無法辨識/斷貨"
+
+                                # AI 自動配對引擎
                                 expanded_keywords = set([clean_raw])
                                 for key, aliases in STATIC_DICT.items():
                                     if any(a in clean_raw for a in aliases):
@@ -708,8 +714,9 @@ with tab4:
                                         best_match = opt
                                 
                                 unmapped_items.append({
-                                    "決策": "暫不處理",
+                                    "✔️ 寫入 Mapping": False, # 💡 改回勾選框，直覺防呆
                                     "報價單原文": raw_name_text.strip(),
+                                    "👀 系統試抓價錢": preview_price,
                                     "對應母表產品 (AI建議)": best_match
                                 })
         
@@ -719,74 +726,75 @@ with tab4:
             st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
             st.session_state['inbox_data'] = None
         else:
-            # 刪除重複的未知項目
             unique_unmapped = {item["報價單原文"]: item for item in unmapped_items}.values()
             st.session_state['inbox_data'] = list(unique_unmapped)
             st.session_state['radar_sup'] = radar_sup
             
     if st.session_state.get('inbox_data'):
         st.warning(f"📥 系統從 `{st.session_state['radar_sup']}` 的報價單中，發現了 **{len(st.session_state['inbox_data'])}** 個未追蹤的產品！")
-        st.write("請在「決策」欄位選擇你要執行的動作，如果選擇【✅ 建立 Mapping】，系統會使用右側的產品綁定。")
+        st.write("請勾選「✔️ 寫入 Mapping」，確認右方的下拉選單無誤後按下寫入。（沒有打勾的將會被系統忽略）")
         
+        # 💡 新增：全選 / 取消全選 快捷鍵
+        col_btn1, col_btn2, _ = st.columns([1, 1, 3])
+        with col_btn1:
+            if st.button("☑️ 全部勾選 (準備寫入)"):
+                for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = True
+                st.rerun()
+        with col_btn2:
+            if st.button("☐ 全部取消勾選"):
+                for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = False
+                st.rerun()
+
         inbox_df = pd.DataFrame(st.session_state['inbox_data'])
         edited_inbox = st.data_editor(
             inbox_df,
             column_config={
-                "決策": st.column_config.SelectboxColumn(
-                    "決策", options=["暫不處理", "✅ 建立 Mapping", "🛑 加入黑名單"], required=True
-                ),
+                "✔️ 寫入 Mapping": st.column_config.CheckboxColumn("✔️ 寫入 Mapping"),
                 "報價單原文": st.column_config.TextColumn("報價單原文", disabled=True),
-                "對應母表產品 (AI建議)": st.column_config.SelectboxColumn(
-                    "對應母表產品 (AI建議)", options=all_db_options, required=True
-                )
+                "👀 系統試抓價錢": st.column_config.TextColumn("👀 系統試抓價錢", disabled=True, help="讓你驗證系統是否能正確讀取這行的價錢"),
+                "對應母表產品 (AI建議)": st.column_config.SelectboxColumn("對應母表產品 (AI建議)", options=all_db_options)
             },
             use_container_width=True, hide_index=True, height=500
         )
         
-        if st.button("💾 執行批次處理", type="primary"):
+        if st.button("💾 將打勾的項目寫入 Mapping", type="primary"):
             loading_ph5 = st.empty()
             loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             
             gc, sh, _ = get_google_connection()
             map_ws = sh.worksheet('Mapping')
-            ig_ws = sh.worksheet('Ignore_List')
             
             map_adds = []
-            ig_adds = []
-            hk_tz = pytz.timezone('Asia/Hong_Kong')
-            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
             
             for idx, row in edited_inbox.iterrows():
-                action = row["決策"]
-                raw_name = row["報價單原文"]
-                if action == "✅ 建立 Mapping":
+                if row["✔️ 寫入 Mapping"]: # 💡 只有打勾的才會被處理
+                    raw_name = row["報價單原文"]
                     selected_sku_str = row["對應母表產品 (AI建議)"]
-                    if selected_sku_str == "請選擇對應產品...":
-                        st.error(f"❌ 產品 `{raw_name}` 選擇了建立 Mapping，但沒有指定對應的母表產品！")
+                    if "請選擇" in selected_sku_str:
+                        st.error(f"❌ 產品 `{raw_name}` 已打勾，但沒有指定對應的母表產品！")
                         loading_ph5.empty()
                         st.stop()
-                    # 從 "[1105] 巴西牛小排" 中萃取出 1105
+                    
                     match = re.search(r'\[(.*?)\]', selected_sku_str)
                     if match:
                         pure_sku = match.group(1)
                         map_adds.append([st.session_state['radar_sup'], raw_name, pure_sku])
-                elif action == "🛑 加入黑名單":
-                    ig_adds.append([st.session_state['radar_sup'], raw_name, sys_today])
             
-            if map_adds: map_ws.append_rows(map_adds)
-            if ig_adds: ig_ws.append_rows(ig_adds)
-            
-            fetch_all_google_data.clear()
-            loading_ph5.empty()
-            st.balloons()
-            st.success(f"🎉 批次處理成功！新增了 {len(map_adds)} 筆 Mapping，{len(ig_adds)} 筆黑名單。")
-            st.session_state['inbox_data'] = None
-            time.sleep(2)
-            st.rerun()
+            if map_adds: 
+                map_ws.append_rows(map_adds)
+                fetch_all_google_data.clear()
+                loading_ph5.empty()
+                st.balloons()
+                st.success(f"🎉 批次處理成功！成功新增了 {len(map_adds)} 筆 Mapping！")
+                st.session_state['inbox_data'] = None
+                time.sleep(2)
+                st.rerun()
+            else:
+                loading_ph5.empty()
+                st.warning("⚠️ 沒有勾選任何項目寫入。")
 
     st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
-    st.write("一鍵掃描 `Mapping` 分頁與四大母表，找出人為輸入錯誤、幽靈 SKU 及類別衝突。")
     if st.button("🚀 立即執行全面體檢", use_container_width=True):
         loading_ph4 = st.empty()
         loading_ph4.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
