@@ -21,7 +21,7 @@ from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
-# 🛑 終極封殺 CTRL+C (Clear Cache) 的最高權限攔截器
+# 🛑 終極封殺 CTRL+C 的攔截器
 # ==========================================
 components.html(
     """
@@ -36,8 +36,7 @@ components.html(
     window.parent.document.addEventListener('keydown', stopC, true);
     window.document.addEventListener('keydown', stopC, true);
     </script>
-    """,
-    height=0, width=0
+    """, height=0, width=0
 )
 
 # ==========================================
@@ -49,37 +48,31 @@ hide_st_style = """
     [data-testid="stActionElements"] { display: none !important; }
     footer { visibility: hidden; display: none !important; }
     [data-testid="stStatusWidget"] { visibility: hidden; display: none !important; }
-
     :root, .stApp, [data-testid="stAppViewContainer"] {
         --background-color: #FFFFFF !important; --secondary-background-color: #F8F9FA !important;
         --text-color: #111111 !important; background-color: #FFFFFF !important; color: #111111 !important;
     }
     [data-testid="stSidebar"], .stSidebar { background-color: #F8F9FA !important; border-right: 1px solid #E0E0E0 !important; }
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp p, .stApp span, .stApp label { color: #111111 !important; }
-    
     div[data-testid="stForm"] {
         background-color: #FFFFFF !important; border: 1px solid #CCCCCC !important;
         border-radius: 12px !important; padding: 30px !important; box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
     }
     .stApp input, .stApp select, [data-baseweb="select"] { background-color: #F9F9F9 !important; color: #111111 !important; border-color: #CCCCCC !important; }
-    
     .stButton > button, div[data-testid="stForm"] button {
         background-color: #1F77B4 !important; color: #FFFFFF !important; border: none !important;
         border-radius: 6px !important; font-weight: bold !important; box-shadow: 0 2px 5px rgba(31, 119, 180, 0.3) !important;
     }
     .stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #155B8C !important; color: #FFFFFF !important; }
     button[title="View fullscreen"] { display: none !important; }
-
     .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; }
     .product-card-header { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important; }
     .product-card-title { font-size: 16px !important; font-weight: 900 !important; color: #111111 !important; margin: 0 !important; }
     .product-card-body { font-size: 12px !important; color: #666666 !important; line-height: 1.6 !important; }
     .product-card-price-row { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-top: 6px !important; }
     .product-card-price { color: #D9534F !important; font-size: 18px !important; font-weight: bold !important; }
-    
     .badge { padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; background-color: #E6F7FF !important; color: #0066CC !important; }
     .badge-danger { background-color: #FFEEEE !important; color: #D9534F !important; }
-
     .bulk-card { border: 2px solid #1F77B4; border-radius: 10px; padding: 15px; margin-bottom: 15px; background-color: #F4F9FC; }
     .bulk-header { font-size: 18px; font-weight: 900; color: #1F77B4; border-bottom: 2px solid #1F77B4; padding-bottom: 8px; margin-bottom: 10px; }
     .bulk-section { font-size: 14px; color: #333; margin-bottom: 10px; line-height: 1.6; }
@@ -88,7 +81,6 @@ hide_st_style = """
     .bulk-history { background: #fff; padding: 10px; border-radius: 6px; border: 1px dashed #bbb; margin-bottom: 10px; }
     .bulk-conclusion { background: #E8F5E9; padding: 10px; border-radius: 6px; color: #2E7D32; font-weight: bold; border-left: 5px solid #4CAF50; margin-bottom: 5px; }
     .bulk-warning { background: #FFF3E0; padding: 10px; border-radius: 6px; color: #E65100; font-weight: bold; border-left: 5px solid #FF9800; margin-bottom: 5px; }
-    
     @keyframes wave-animation { 0%, 40%, 100% { transform: translateY(0); } 20% { transform: translateY(-12px); color: #1F77B4; } }
     .wave-text { font-size: 22px; font-weight: bold; text-align: center; padding: 40px; color: #555555; }
     .wave-text span { display: inline-block; animation: wave-animation 1.5s infinite; }
@@ -136,10 +128,15 @@ HEADER_MAP = {
 }
 FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧" }
 
+# 💡 共用智能字典
+STATIC_DICT = {
+    "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
+    "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
+    "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"], "金錢展": ["金展", "金錢展", "金錢𦟌"], "肉眼": ["肉眼", "ribeye"]
+}
+
 loading_ph = st.empty()
 loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-
-# 💡 Phase 2: 提取 ignore_dict (黑名單)
 target_dict, cat_data, hist_vals, global_origins, ignore_dict = fetch_all_google_data()
 loading_ph.empty()
 
@@ -171,7 +168,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v14.0 (Phase 2 智能黑名單)")
+    st.caption("版本號: v15.0 (Phase 3 智能收件箱版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -401,7 +398,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋
+# 📌 分頁二：日常搜尋 (維持不變)
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -416,12 +413,6 @@ with tab2:
     if submit_search and search_query:
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
-        
-        STATIC_DICT = {
-            "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
-            "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
-            "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"], "金錢展": ["金展", "金錢展", "金錢𦟌"], "肉眼": ["肉眼", "ribeye"]
-        }
         for key, aliases in STATIC_DICT.items():
             if key in q_clean or q_clean in key: search_aliases.update(aliases)
                             
@@ -431,7 +422,6 @@ with tab2:
         with sub_tab1:
             search_ph1 = st.empty()
             search_ph1.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-
             compare_results = []
             for sn, all_vals in cat_data.items():
                 if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue
@@ -442,13 +432,11 @@ with tab2:
                         c_str = clean_string(str(cv))
                         for sup_name, sup_headers in HEADER_MAP.items():
                             if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
-                
                 for row_idx, r in enumerate(all_vals[2:]):
                     if not r: continue
                     sku = str(r[0]).strip()
                     origin = str(r[1]).strip() if len(r) > 1 else "未標明"
                     if selected_origins and origin not in selected_origins: continue
-                        
                     std_name = " | ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
                     clean_sku = clean_string(sku); clean_std = clean_string(std_name)
                     
@@ -458,32 +446,24 @@ with tab2:
                             if lb_col_idx != -1 and lb_col_idx < len(r):
                                 p_val_str = str(r[lb_col_idx]).strip()
                                 nums = re.findall(r'\d+\.?\d*', p_val_str)
-                                
                                 is_sold_out_now = "sold out" in p_val_str.lower() or not nums
                                 hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
-                                
                                 valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
-                                if is_sold_out_now and len(valid_past_prices) > 0:
-                                    hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
+                                if is_sold_out_now and len(valid_past_prices) > 0: hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
                                 elif not is_sold_out_now:
                                     display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
-                                    if valid_past_prices and display_price <= min(valid_past_prices):
-                                        hist_alert = "🔥🔥 歷史低位"
-                                
+                                    if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
                                 if display_price != "Sold out" or hist_alert:
                                     compare_results.append({
                                         "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
                                         "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
                                     })
             search_ph1.empty()
-                                    
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
                 cheapest = df_compare.iloc[0]
-                
                 if cheapest['每磅均價 ($/LB)'] != "Sold out":
                     st.markdown(f"<div style='background-color:#e8f5e9 !important; padding: 15px; border-radius: 8px; border-left: 5px solid #4caf50; margin-bottom: 15px;'><span style='font-size:12px; color:#2e7d32; font-weight:bold;'>🏆 最平首選推薦</span><h3 style='margin:5px 0 0 0; color:#1b5e20; font-size:18px;'>【{cheapest['供應商']}】 {cheapest['標準品名']}</h3><h2 style='margin:5px 0 0 0; color:#2e7d32; font-size:24px; font-weight:900;'>${cheapest['每磅均價 ($/LB)']:.1f} <span style='font-size:14px; font-weight:normal;'>/ LB</span></h2></div>", unsafe_allow_html=True)
-                
                 for _, row in df_compare.iterrows():
                     is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
                     badge_class = "badge badge-danger" if is_soldout_card else "badge"
@@ -492,10 +472,8 @@ with tab2:
                     if not is_soldout_card and cheapest['每磅均價 ($/LB)'] != "Sold out":
                         diff = row['每磅均價 ($/LB)'] - cheapest['每磅均價 ($/LB)']
                         diff_text = f"貴 ${diff:.1f}" if diff > 0 else "最平"
-                    
                     price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     price_color = "#999999" if is_soldout_card else "#D9534F"
-                    
                     diff_html = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
                     st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span>{diff_html}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='product-card-price' style='color: {price_color} !important;'>{price_display}</span>{alert_html}</div></div>", unsafe_allow_html=True)
             else: st.warning("🔍 沒找到符合條件的報價。")
@@ -508,8 +486,7 @@ with tab2:
                 drive_service = get_drive_connection()
                 results = drive_service.files().list(q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", fields="files(id, name, createdTime)").execute()
                 files = results.get('files', [])
-                if not files: 
-                    search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
+                if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
                 else:
                     supplier_files = {}
                     for f in files:
@@ -521,7 +498,6 @@ with tab2:
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
                     cloud_db = []
-                    
                     for idx, file in enumerate(files_to_scan):
                         supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
                         request = drive_service.files().get_media(fileId=file['id'])
@@ -557,16 +533,13 @@ with tab2:
                             diff_html_cloud = f"<span class='badge' style='background-color: #E0E0E0 !important; color: #333333 !important;'>{diff_text}</span>" if diff_text else ""
                             st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span>{diff_html_cloud}</div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
-            except Exception as e: 
-                search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
+            except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
 
 # ----------------------------------------------------
-# 📌 分頁三：📊 智能入貨分析
+# 📌 分頁三：📊 智能入貨分析 (維持不變)
 # ----------------------------------------------------
 with tab3:
     st.header("大規模入貨決策支援")
-    st.markdown("針對大量入貨需求，系統會直接提供跨供應商對比，以及 **最真實的過去報價紀錄** 作為議價依據。")
-    
     with st.form("bulk_form"):
         col_b1, col_b2 = st.columns([4, 1])
         with col_b1: bulk_query = st.text_input("🎯 第一步：搜尋目標產品 (如: 雞翼, 西冷):", placeholder="輸入任意關鍵字開始找尋...")
@@ -576,20 +549,11 @@ with tab3:
             
     if submit_bulk and bulk_query:
         bulk_q_clean = clean_string(bulk_query)
-        
         search_aliases = set([bulk_q_clean])
-        STATIC_DICT = {
-            "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
-            "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
-            "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"], "金錢展": ["金展", "金錢展", "金錢𦟌"], "肉眼": ["肉眼", "ribeye"]
-        }
         for key, aliases in STATIC_DICT.items():
             if key in bulk_q_clean or bulk_q_clean in key: search_aliases.update(aliases)
-            
         st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}`")
-        
         bulk_matches = []
-        
         for sn, all_vals in cat_data.items():
             if not all_vals: continue
             sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
@@ -602,9 +566,7 @@ with tab3:
                 if not row: continue
                 sku = str(row[0]).strip()
                 std_name = " ".join([str(row[i]).strip() for i in range(1, min(6, len(row))) if str(row[i]).strip()])
-                
-                clean_sku = clean_string(sku)
-                clean_std = clean_string(std_name)
+                clean_sku = clean_string(sku); clean_std = clean_string(std_name)
                 
                 if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                     current_prices = {}
@@ -615,56 +577,37 @@ with tab3:
                             nums = re.findall(r'\d+\.?\d*', val_str)
                             if nums and float(nums[0]) > 0 and "sold out" not in val_str.lower():
                                 current_prices[sup_name] = round(float(nums[0]), 1)
-                    
-                    bulk_matches.append({
-                        "sku": sku, "name": std_name, "origin": str(row[1]).strip() if len(row)>1 else "未標明",
-                        "current_prices": current_prices
-                    })
-        
+                    bulk_matches.append({"sku": sku, "name": std_name, "origin": str(row[1]).strip() if len(row)>1 else "未標明", "current_prices": current_prices})
         if not bulk_matches:
-            st.warning("沒有在母表中找到符合該關鍵字的產品。")
-            st.session_state['bulk_matches'] = None
-        else:
-            st.session_state['bulk_matches'] = bulk_matches
+            st.warning("沒有在母表中找到符合該關鍵字的產品。"); st.session_state['bulk_matches'] = None
+        else: st.session_state['bulk_matches'] = bulk_matches
             
     if st.session_state.get('bulk_matches'):
         matches = st.session_state['bulk_matches']
-        
         st.markdown("### 🎯 第二步：精準鎖定 (點擊下拉選單過濾)")
         col_f1, col_f2 = st.columns(2)
         all_origins = sorted(list(set([m['origin'] for m in matches if m['origin']])))
         all_skus = sorted(list(set([f"[{m['sku']}] {m['name']}" for m in matches])))
-        
         with col_f1: f_origins = st.multiselect("🌍 鎖定產地", all_origins, placeholder="全部產地 (可選多個)")
         with col_f2: f_skus = st.multiselect("📌 鎖定精準 SKU / 品名", all_skus, placeholder="全部產品 (可選多個)")
-        
         st.markdown("---")
-        
         filtered_matches = matches
         if f_origins: filtered_matches = [m for m in filtered_matches if m['origin'] in f_origins]
         if f_skus: filtered_matches = [m for m in filtered_matches if f"[{m['sku']}] {m['name']}" in f_skus]
         
-        if not filtered_matches:
-            st.warning("⚠️ 此篩選條件下沒有產品，請放寬條件。")
+        if not filtered_matches: st.warning("⚠️ 此篩選條件下沒有產品，請放寬條件。")
         else:
             for item in filtered_matches:
                 sku = item['sku']
-                
                 sku_history = [x for x in parsed_history if x['sku'] == sku and x['price'] > 0]
                 date_prices = {}
                 for rec in sku_history:
                     d_str = rec['date'].strftime('%Y-%m-%d')
-                    if d_str not in date_prices or rec['price'] < date_prices[d_str]:
-                        date_prices[d_str] = rec['price']
-                        
+                    if d_str not in date_prices or rec['price'] < date_prices[d_str]: date_prices[d_str] = rec['price']
                 sorted_dates = sorted(date_prices.keys(), reverse=True)
                 last_3_records = [(d, date_prices[d]) for d in sorted_dates[:3]]
-                
-                if last_3_records:
-                    last_3_html = "<br>".join([f"📅 {d} 報價: <b>${p:.1f}</b>" for d, p in last_3_records])
-                else:
-                    last_3_html = "<span style='color:#999;'>尚無歷史真實報價紀錄</span>"
-                
+                if last_3_records: last_3_html = "<br>".join([f"📅 {d} 報價: <b>${p:.1f}</b>" for d, p in last_3_records])
+                else: last_3_html = "<span style='color:#999;'>尚無歷史真實報價紀錄</span>"
                 historical_min = min(date_prices.values()) if date_prices else None
                 current_min = min(item['current_prices'].values()) if item['current_prices'] else None
                 
@@ -675,17 +618,13 @@ with tab3:
                         css_class = "bulk-price-tag bulk-cheapest" if is_cheapest else "bulk-price-tag"
                         star = "🏆 " if is_cheapest else ""
                         current_tags_html += f"<span class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
-                else:
-                    current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
+                else: current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
                 
                 conclusion_html = ""
-                if current_min is None:
-                    conclusion_html = f"<div class='bulk-warning'>⚠️ <b>系統分析：</b> 目前全行斷貨，無貨可入。</div>"
-                elif historical_min is None:
-                    conclusion_html = f"<div class='bulk-conclusion' style='color:#555; border-color:#999; background:#f0f0f0;'>ℹ️ <b>系統分析：</b> 無過去報價可比對，請依現價 ${current_min:.1f} 自行判斷。</div>"
+                if current_min is None: conclusion_html = f"<div class='bulk-warning'>⚠️ <b>系統分析：</b> 目前全行斷貨，無貨可入。</div>"
+                elif historical_min is None: conclusion_html = f"<div class='bulk-conclusion' style='color:#555; border-color:#999; background:#f0f0f0;'>ℹ️ <b>系統分析：</b> 無過去報價可比對，請依現價 ${current_min:.1f} 自行判斷。</div>"
                 else:
-                    if current_min <= historical_min:
-                        conclusion_html = f"<div class='bulk-conclusion'>💡 <b>強烈建議入貨：</b> 現時最低價 (${current_min:.1f}) 已平過或等同於歷史絕對低位！</div>"
+                    if current_min <= historical_min: conclusion_html = f"<div class='bulk-conclusion'>💡 <b>強烈建議入貨：</b> 現時最低價 (${current_min:.1f}) 已平過或等同於歷史絕對低位！</div>"
                     else:
                         diff = current_min - historical_min
                         conclusion_html = f"<div class='bulk-warning'>⚠️ <b>建議觀望或講價：</b> 現價 (${current_min:.1f}) 距離你曾買過的歷史最低價 (${historical_min:.1f}) 貴了 ${diff:.1f}。</div>"
@@ -695,19 +634,162 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 (開發者專用)
+# 📌 分頁四：⚙️ 系統管理與防呆中心 (加入 Phase 3 智能收件箱)
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
     st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
     
+    st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
+    st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來，並由 AI 為你建議對應的母表 SKU！")
+    
+    # 💡 建立所有四大母表 SKU 的選項，給下拉選單使用
+    all_db_options = ["請選擇對應產品..."]
+    for sn, vals in cat_data.items():
+        if vals and len(vals) > 2:
+            for r in vals[2:]:
+                if not r: continue
+                sku = str(r[0]).strip()
+                if not sku: continue
+                std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
+                all_db_options.append(f"[{sku}] {std_name}")
+
+    with st.form("radar_form"):
+        col_r1, col_r2 = st.columns([1, 2])
+        with col_r1: radar_sup = st.selectbox("選擇要掃描的供應商", ACTIVE_SUPPLIERS)
+        with col_r2: radar_file = st.file_uploader("上傳報價單進行深層掃描", type="pdf")
+        submit_radar = st.form_submit_button("🚀 啟動新品雷達掃描", use_container_width=True)
+        
+    if submit_radar and radar_file:
+        radar_ph = st.empty()
+        radar_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+        
+        from modules.pdf_xray import parse_supplier_row
+        
+        pdf_bytes = io.BytesIO(radar_file.read())
+        unmapped_items = []
+        
+        # 取得已知的 Mapping 和 黑名單
+        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
+        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
+        
+        with pdfplumber.open(pdf_bytes) as pdf:
+            for page in pdf.pages:
+                for table in page.extract_tables():
+                    for row in table:
+                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                        extracted_parts = parse_supplier_row(radar_sup, cells)
+                        for part in extracted_parts:
+                            raw_name_text = part[0]
+                            clean_raw = clean_string(raw_name_text)
+                            
+                            if len(clean_raw) < 2: continue # 過濾掉太短的垃圾字元
+                            
+                            # 核心過濾邏輯：是否已經 Mapped？是否在黑名單？
+                            is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
+                            is_ignored = any(ig in clean_raw for ig in ignored_items)
+                            
+                            if not is_mapped and not is_ignored:
+                                # 💡 AI 自動配對引擎
+                                expanded_keywords = set([clean_raw])
+                                for key, aliases in STATIC_DICT.items():
+                                    if any(a in clean_raw for a in aliases):
+                                        expanded_keywords.update(aliases)
+                                        expanded_keywords.add(key)
+                                
+                                best_match = "請選擇對應產品..."
+                                max_score = 0
+                                for opt in all_db_options:
+                                    if opt == "請選擇對應產品...": continue
+                                    clean_opt = clean_string(opt)
+                                    score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                    if score > max_score and score > 0:
+                                        max_score = score
+                                        best_match = opt
+                                
+                                unmapped_items.append({
+                                    "決策": "暫不處理",
+                                    "報價單原文": raw_name_text.strip(),
+                                    "對應母表產品 (AI建議)": best_match
+                                })
+        
+        radar_ph.empty()
+        
+        if not unmapped_items:
+            st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
+            st.session_state['inbox_data'] = None
+        else:
+            # 刪除重複的未知項目
+            unique_unmapped = {item["報價單原文"]: item for item in unmapped_items}.values()
+            st.session_state['inbox_data'] = list(unique_unmapped)
+            st.session_state['radar_sup'] = radar_sup
+            
+    if st.session_state.get('inbox_data'):
+        st.warning(f"📥 系統從 `{st.session_state['radar_sup']}` 的報價單中，發現了 **{len(st.session_state['inbox_data'])}** 個未追蹤的產品！")
+        st.write("請在「決策」欄位選擇你要執行的動作，如果選擇【✅ 建立 Mapping】，系統會使用右側的產品綁定。")
+        
+        inbox_df = pd.DataFrame(st.session_state['inbox_data'])
+        edited_inbox = st.data_editor(
+            inbox_df,
+            column_config={
+                "決策": st.column_config.SelectboxColumn(
+                    "決策", options=["暫不處理", "✅ 建立 Mapping", "🛑 加入黑名單"], required=True
+                ),
+                "報價單原文": st.column_config.TextColumn("報價單原文", disabled=True),
+                "對應母表產品 (AI建議)": st.column_config.SelectboxColumn(
+                    "對應母表產品 (AI建議)", options=all_db_options, required=True
+                )
+            },
+            use_container_width=True, hide_index=True, height=500
+        )
+        
+        if st.button("💾 執行批次處理", type="primary"):
+            loading_ph5 = st.empty()
+            loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            
+            gc, sh, _ = get_google_connection()
+            map_ws = sh.worksheet('Mapping')
+            ig_ws = sh.worksheet('Ignore_List')
+            
+            map_adds = []
+            ig_adds = []
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
+            
+            for idx, row in edited_inbox.iterrows():
+                action = row["決策"]
+                raw_name = row["報價單原文"]
+                if action == "✅ 建立 Mapping":
+                    selected_sku_str = row["對應母表產品 (AI建議)"]
+                    if selected_sku_str == "請選擇對應產品...":
+                        st.error(f"❌ 產品 `{raw_name}` 選擇了建立 Mapping，但沒有指定對應的母表產品！")
+                        loading_ph5.empty()
+                        st.stop()
+                    # 從 "[1105] 巴西牛小排" 中萃取出 1105
+                    match = re.search(r'\[(.*?)\]', selected_sku_str)
+                    if match:
+                        pure_sku = match.group(1)
+                        map_adds.append([st.session_state['radar_sup'], raw_name, pure_sku])
+                elif action == "🛑 加入黑名單":
+                    ig_adds.append([st.session_state['radar_sup'], raw_name, sys_today])
+            
+            if map_adds: map_ws.append_rows(map_adds)
+            if ig_adds: ig_ws.append_rows(ig_adds)
+            
+            fetch_all_google_data.clear()
+            loading_ph5.empty()
+            st.balloons()
+            st.success(f"🎉 批次處理成功！新增了 {len(map_adds)} 筆 Mapping，{len(ig_adds)} 筆黑名單。")
+            st.session_state['inbox_data'] = None
+            time.sleep(2)
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
     st.write("一鍵掃描 `Mapping` 分頁與四大母表，找出人為輸入錯誤、幽靈 SKU 及類別衝突。")
-    
     if st.button("🚀 立即執行全面體檢", use_container_width=True):
         loading_ph4 = st.empty()
         loading_ph4.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-        
         gc, sh, _ = get_google_connection()
         try:
             mapping_ws = sh.worksheet('Mapping')
@@ -724,7 +806,6 @@ with tab4:
                         valid_skus.add(str(r[0]).strip())
                         
         errors = []
-        
         for idx, row in enumerate(mapping_data_raw):
             excel_row = idx + 2 
             sup = str(row.get('供應商', '')).strip()
@@ -734,7 +815,6 @@ with tab4:
             if not sup or not raw_name or not sku:
                 errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "❌ 欄位空白", "建議": "請補齊遺漏的欄位"})
                 continue
-                
             if sku not in valid_skus:
                 errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "👻 幽靈 SKU", "建議": "四大母表中找不到此 SKU"})
             
@@ -753,47 +833,35 @@ with tab4:
                     errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為羊)", "建議": "SKU為羊，品名卻包含其他肉類"})
         
         loading_ph4.empty()
-        
         if errors:
             st.warning(f"⚠️ 體檢完成！共發現 **{len(errors)}** 個潛在問題。請回到 Google Excel 的 `Mapping` 分頁進行修正。")
             df_errors = pd.DataFrame(errors)
             st.dataframe(df_errors, use_container_width=True, hide_index=True)
         else:
-            st.balloons()
-            st.success("✅ 體檢完美通過！沒有發現任何邏輯錯誤。")
+            st.balloons(); st.success("✅ 體檢完美通過！沒有發現任何邏輯錯誤。")
 
     st.markdown("---")
-    st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 管理")
-    st.write("設定不需要系統提醒或追蹤的產品（如包裝物料、運費等），為未來的「新品雷達」做好過濾準備。")
-    
+    st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 快速管理")
     if ignore_dict:
         st.write("📋 **目前黑名單內容：**")
         ignore_rows = []
         for sup, vals in ignore_dict.items():
-            for v in vals:
-                ignore_rows.append({"供應商": sup, "忽略的原文關鍵字": v})
+            for v in vals: ignore_rows.append({"供應商": sup, "忽略的原文關鍵字": v})
         st.dataframe(pd.DataFrame(ignore_rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("目前沒有任何黑名單設定。")
+    else: st.info("目前沒有任何黑名單設定。")
 
     with st.form("add_ignore_form"):
         col_ig1, col_ig2 = st.columns([1, 2])
         with col_ig1: ig_sup = st.selectbox("選擇供應商", ACTIVE_SUPPLIERS)
         with col_ig2: ig_val = st.text_input("輸入要忽略的產品原文 / 關鍵字 (如: 膠袋, 運費)")
-        submit_ig = st.form_submit_button("➕ 加入黑名單", use_container_width=True)
+        submit_ig = st.form_submit_button("➕ 快速加入單筆黑名單", use_container_width=True)
         
         if submit_ig and ig_val:
             gc, sh, _ = get_google_connection()
-            try:
-                ig_ws = sh.worksheet('Ignore_List')
-            except Exception:
-                st.error("❌ 找不到 `Ignore_List` 分頁！請確保你已經在 Google Excel 中建立了這個分頁。")
-                st.stop()
-            
+            ig_ws = sh.worksheet('Ignore_List')
             hk_tz = pytz.timezone('Asia/Hong_Kong')
             sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
             ig_ws.append_row([ig_sup, ig_val, sys_today])
-            
             fetch_all_google_data.clear()
             st.success(f"✅ 已將 `{ig_val}` 加入 {ig_sup} 的黑名單！")
             time.sleep(1.5)
