@@ -167,7 +167,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v17.0 (極速 Mapping 搜尋版)")
+    st.caption("版本號: v18.0 (萬安解析修復 & 鍵盤搜尋版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -397,7 +397,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋
+# 📌 分頁二：日常搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -507,19 +507,39 @@ with tab2:
                         
                         with pdfplumber.open(fh) as pdf:
                             for page in pdf.pages:
-                                for table in page.extract_tables():
-                                    for row in table:
-                                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
-                                        extracted_parts = parse_supplier_row(supplier, cells)
-                                        for part in extracted_parts:
-                                            p_name, p_price_str, p_unit_str = part
-                                            if len(clean_string(p_name)) > 2: 
-                                                origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(p_name, p_price_str, p_unit_str)
-                                                if price_lb and price_kg:
-                                                    cloud_db.append({
-                                                        "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
-                                                        "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
-                                                    })
+                                # 💡 萬安(遠東) 雲端盲掃的特權逐行防呆處理
+                                if supplier == "萬安(遠東)":
+                                    text = page.extract_text()
+                                    if text:
+                                        for line in text.split('\n'):
+                                            line = line.strip()
+                                            prices = re.findall(r'\b\d+\.\d{1,2}\b', line)
+                                            if prices:
+                                                price_str = prices[-1]
+                                                raw_name_text = line.rsplit(price_str, 1)[0].strip()
+                                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
+                                                if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
+                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, "")
+                                                    if price_lb and price_kg:
+                                                        cloud_db.append({
+                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                                        })
+                                else:
+                                    for table in page.extract_tables():
+                                        for row in table:
+                                            cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                                            extracted_parts = parse_supplier_row(supplier, cells)
+                                            for part in extracted_parts:
+                                                p_name, p_price_str, p_unit_str = part
+                                                if "@@@" in p_name: p_name = p_name.split("@@@")[0]
+                                                if len(clean_string(p_name)) > 2: 
+                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(p_name, p_price_str, p_unit_str)
+                                                    if price_lb and price_kg:
+                                                        cloud_db.append({
+                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                                        })
                     search_ph2.empty()
                     filtered_cloud = [item for item in cloud_db if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins)]
                     if filtered_cloud:
@@ -633,7 +653,7 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 (視覺化下拉選單 & 勾選防呆)
+# 📌 分頁四：⚙️ 系統管理與防呆中心 
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
@@ -642,7 +662,7 @@ with tab4:
     st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
     st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來，並由 AI 為你建議對應的母表 SKU！")
     
-    # 💡 重構下拉選單：移除 Emoji，回歸最簡潔的格式，釋放鍵盤搜尋潛力
+    # 💡 移除 Emoji，釋放鍵盤搜尋威力
     all_db_options = ["請選擇對應產品..."]
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
@@ -657,7 +677,7 @@ with tab4:
         col_r1, col_r2 = st.columns([1, 2])
         with col_r1: radar_sup = st.selectbox("選擇要掃描的供應商", ACTIVE_SUPPLIERS)
         with col_r2: radar_file = st.file_uploader("上傳報價單進行深層掃描", type="pdf")
-        submit_radar = st.form_submit_button("🚀 啟動新品雷達掃描", use_container_width=True)
+        submit_radar = st.form_submit_button("🚀 啟推新品雷達掃描", use_container_width=True)
         
     if submit_radar and radar_file:
         radar_ph = st.empty()
@@ -673,50 +693,90 @@ with tab4:
         
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                for table in page.extract_tables():
-                    for row in table:
-                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
-                        extracted_parts = parse_supplier_row(radar_sup, cells)
-                        for part in extracted_parts:
-                            raw_name_text = part[0]
-                            clean_raw = clean_string(raw_name_text)
-                            
-                            if len(clean_raw) < 2: continue 
-                            
-                            is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
-                            is_ignored = any(ig in clean_raw for ig in ignored_items)
-                            
-                            if not is_mapped and not is_ignored:
-                                p_price_str = part[1]
-                                p_unit_str = part[2]
-                                _, _, _, _, _, price_lb, _ = deep_decode_item(raw_name_text, p_price_str, p_unit_str)
-                                preview_price = f"${price_lb} / LB" if price_lb else "無法辨識/斷貨"
+                # 💡 萬安(遠東) 專屬逐行掃描通道，徹底消滅 @@@ 亂碼
+                if radar_sup == "萬安(遠東)":
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split('\n'):
+                            line = line.strip()
+                            prices = re.findall(r'\b\d+\.\d{1,2}\b', line)
+                            if prices:
+                                price_str = prices[-1]
+                                raw_name_text = line.rsplit(price_str, 1)[0].strip()
+                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
+                                clean_raw = clean_string(raw_name_text)
+                                
+                                # 必須包含中文字才算是產品 (過濾雜訊)
+                                if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
+                                
+                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
+                                is_ignored = any(ig in clean_raw for ig in ignored_items)
+                                
+                                if not is_mapped and not is_ignored:
+                                    preview_price = f"${price_str} / LB"
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
+                                    best_match = "請選擇對應產品..."
+                                    max_score = 0
+                                    for opt in all_db_options:
+                                        if opt == "請選擇對應產品...": continue
+                                        clean_opt = clean_string(opt)
+                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        if score > max_score and score > 0:
+                                            max_score = score
+                                            best_match = opt
+                                    unmapped_items.append({
+                                        "✔️ 寫入 Mapping": False,
+                                        "報價單原文": raw_name_text,
+                                        "👀 系統試抓價錢": preview_price,
+                                        "對應母表產品 (AI建議)": best_match
+                                    })
+                else:
+                    for table in page.extract_tables():
+                        for row in table:
+                            cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                            extracted_parts = parse_supplier_row(radar_sup, cells)
+                            for part in extracted_parts:
+                                raw_name_text = part[0]
+                                if "@@@" in raw_name_text: raw_name_text = raw_name_text.split("@@@")[0] # 全域防線
+                                clean_raw = clean_string(raw_name_text)
+                                
+                                if len(clean_raw) < 2: continue 
+                                
+                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
+                                is_ignored = any(ig in clean_raw for ig in ignored_items)
+                                
+                                if not is_mapped and not is_ignored:
+                                    p_price_str = part[1]
+                                    p_unit_str = part[2]
+                                    _, _, _, _, _, price_lb, _ = deep_decode_item(raw_name_text, p_price_str, p_unit_str)
+                                    preview_price = f"${price_lb} / LB" if price_lb else "無法辨識/斷貨"
 
-                                expanded_keywords = set([clean_raw])
-                                for key, aliases in STATIC_DICT.items():
-                                    if any(a in clean_raw for a in aliases):
-                                        expanded_keywords.update(aliases)
-                                        expanded_keywords.add(key)
-                                
-                                best_match = "請選擇對應產品..."
-                                max_score = 0
-                                for opt in all_db_options:
-                                    if opt == "請選擇對應產品...": continue
-                                    clean_opt = clean_string(opt)
-                                    score = sum(1 for kw in expanded_keywords if kw in clean_opt)
-                                    if score > max_score and score > 0:
-                                        max_score = score
-                                        best_match = opt
-                                
-                                unmapped_items.append({
-                                    "✔️ 寫入 Mapping": False,
-                                    "報價單原文": raw_name_text.strip(),
-                                    "👀 系統試抓價錢": preview_price,
-                                    "對應母表產品 (AI建議)": best_match
-                                })
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
+                                    best_match = "請選擇對應產品..."
+                                    max_score = 0
+                                    for opt in all_db_options:
+                                        if opt == "請選擇對應產品...": continue
+                                        clean_opt = clean_string(opt)
+                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        if score > max_score and score > 0:
+                                            max_score = score
+                                            best_match = opt
+                                    unmapped_items.append({
+                                        "✔️ 寫入 Mapping": False,
+                                        "報價單原文": raw_name_text.strip(),
+                                        "👀 系統試抓價錢": preview_price,
+                                        "對應母表產品 (AI建議)": best_match
+                                    })
         
         radar_ph.empty()
-        
         if not unmapped_items:
             st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
             st.session_state['inbox_data'] = None
@@ -754,10 +814,8 @@ with tab4:
         if st.button("💾 將打勾的項目寫入 Mapping", type="primary"):
             loading_ph5 = st.empty()
             loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
-            
             gc, sh, _ = get_google_connection()
             map_ws = sh.worksheet('Mapping')
-            
             map_adds = []
             
             for idx, row in edited_inbox.iterrows():
@@ -768,7 +826,6 @@ with tab4:
                         st.error(f"❌ 產品 `{raw_name}` 已打勾，但沒有指定對應的母表產品！")
                         loading_ph5.empty()
                         st.stop()
-                    
                     match = re.search(r'\[(.*?)\]', selected_sku_str)
                     if match:
                         pure_sku = match.group(1)
