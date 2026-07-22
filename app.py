@@ -167,7 +167,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v18.0 (萬安解析修復 & 鍵盤搜尋版)")
+    st.caption("版本號: v19.0 (萬安切割 & 價格聯動寫入版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -397,7 +397,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 
+# 📌 分頁二：日常搜尋
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -507,17 +507,16 @@ with tab2:
                         
                         with pdfplumber.open(fh) as pdf:
                             for page in pdf.pages:
-                                # 💡 萬安(遠東) 雲端盲掃的特權逐行防呆處理
                                 if supplier == "萬安(遠東)":
                                     text = page.extract_text()
                                     if text:
                                         for line in text.split('\n'):
                                             line = line.strip()
-                                            prices = re.findall(r'\b\d+\.\d{1,2}\b', line)
-                                            if prices:
-                                                price_str = prices[-1]
-                                                raw_name_text = line.rsplit(price_str, 1)[0].strip()
-                                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
+                                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                                            for match in matches:
+                                                raw_name_text = match.group(1).strip()
+                                                price_str = match.group(2)
+                                                raw_name_text = re.sub(r'^抄碼\s*', '', raw_name_text).strip()
                                                 if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
                                                     origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, "")
                                                     if price_lb and price_kg:
@@ -653,16 +652,16 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 
+# 📌 分頁四：⚙️ 系統管理與防呆中心 (實裝聯動寫入與萬安正則)
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
     st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
     
     st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
-    st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來，並由 AI 為你建議對應的母表 SKU！")
+    st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來。確認無誤後，系統會幫你同步建立 Mapping 與寫入最新價錢！")
     
-    # 💡 移除 Emoji，釋放鍵盤搜尋威力
+    # 💡 移除 Emoji 枷鎖，釋放鍵盤搜尋威力
     all_db_options = ["請選擇對應產品..."]
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
@@ -674,12 +673,16 @@ with tab4:
                 all_db_options.append(f"[{sku}] {std_name}")
 
     with st.form("radar_form"):
-        col_r1, col_r2 = st.columns([1, 2])
+        col_r1, col_r2, col_r3 = st.columns([1, 1, 2])
         with col_r1: radar_sup = st.selectbox("選擇要掃描的供應商", ACTIVE_SUPPLIERS)
-        with col_r2: radar_file = st.file_uploader("上傳報價單進行深層掃描", type="pdf")
-        submit_radar = st.form_submit_button("🚀 啟推新品雷達掃描", use_container_width=True)
+        with col_r2:
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            radar_date = st.date_input("🗓️ 報價單日期", datetime.now(hk_tz))
+        with col_r3: radar_file = st.file_uploader("上傳報價單進行深層掃描", type="pdf")
+        submit_radar = st.form_submit_button("🚀 啟動新品雷達掃描", use_container_width=True)
         
     if submit_radar and radar_file:
+        st.session_state['radar_date_str'] = radar_date.strftime("%Y-%m-%d")
         radar_ph = st.empty()
         radar_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
         
@@ -693,27 +696,36 @@ with tab4:
         
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                # 💡 萬安(遠東) 專屬逐行掃描通道，徹底消滅 @@@ 亂碼
+                # 💡 萬安專屬的「細胞分裂正則引擎」，精準切開黏在一起的字串
                 if radar_sup == "萬安(遠東)":
                     text = page.extract_text()
                     if text:
                         for line in text.split('\n'):
                             line = line.strip()
-                            prices = re.findall(r'\b\d+\.\d{1,2}\b', line)
-                            if prices:
-                                price_str = prices[-1]
-                                raw_name_text = line.rsplit(price_str, 1)[0].strip()
-                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
+                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                            for match in matches:
+                                raw_name_text = match.group(1).strip()
+                                price_str = match.group(2)
+                                unit_str = match.group(3) if match.group(3) else ""
+                                
+                                raw_name_text = re.sub(r'^抄碼\s*', '', raw_name_text).strip()
                                 clean_raw = clean_string(raw_name_text)
                                 
-                                # 必須包含中文字才算是產品 (過濾雜訊)
                                 if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
                                 
                                 is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
                                 is_ignored = any(ig in clean_raw for ig in ignored_items)
                                 
                                 if not is_mapped and not is_ignored:
-                                    preview_price = f"${price_str} / LB"
+                                    try:
+                                        price_val = float(price_str)
+                                        if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
+                                        price_val = round(price_val, 1)
+                                    except:
+                                        price_val = 0.0
+                                        
+                                    preview_price = f"${price_val} / LB"
+                                    
                                     expanded_keywords = set([clean_raw])
                                     for key, aliases in STATIC_DICT.items():
                                         if any(a in clean_raw for a in aliases):
@@ -728,11 +740,13 @@ with tab4:
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
+                                            
                                     unmapped_items.append({
                                         "✔️ 寫入 Mapping": False,
-                                        "報價單原文": raw_name_text,
-                                        "👀 系統試抓價錢": preview_price,
-                                        "對應母表產品 (AI建議)": best_match
+                                        "報價單原文": raw_name_text.strip(),
+                                        "對應母表產品 (AI建議)": best_match,
+                                        "✏️ 手動新價(LB)": price_val,
+                                        "👀 系統試抓價錢": preview_price
                                     })
                 else:
                     for table in page.extract_tables():
@@ -741,7 +755,7 @@ with tab4:
                             extracted_parts = parse_supplier_row(radar_sup, cells)
                             for part in extracted_parts:
                                 raw_name_text = part[0]
-                                if "@@@" in raw_name_text: raw_name_text = raw_name_text.split("@@@")[0] # 全域防線
+                                if "@@@" in raw_name_text: raw_name_text = raw_name_text.split("@@@")[0]
                                 clean_raw = clean_string(raw_name_text)
                                 
                                 if len(clean_raw) < 2: continue 
@@ -753,7 +767,9 @@ with tab4:
                                     p_price_str = part[1]
                                     p_unit_str = part[2]
                                     _, _, _, _, _, price_lb, _ = deep_decode_item(raw_name_text, p_price_str, p_unit_str)
-                                    preview_price = f"${price_lb} / LB" if price_lb else "無法辨識/斷貨"
+                                    
+                                    price_val = price_lb if price_lb else 0.0
+                                    preview_price = f"${price_val} / LB" if price_val else "無法辨識/斷貨"
 
                                     expanded_keywords = set([clean_raw])
                                     for key, aliases in STATIC_DICT.items():
@@ -769,14 +785,17 @@ with tab4:
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
+                                            
                                     unmapped_items.append({
                                         "✔️ 寫入 Mapping": False,
                                         "報價單原文": raw_name_text.strip(),
-                                        "👀 系統試抓價錢": preview_price,
-                                        "對應母表產品 (AI建議)": best_match
+                                        "對應母表產品 (AI建議)": best_match,
+                                        "✏️ 手動新價(LB)": price_val,
+                                        "👀 系統試抓價錢": preview_price
                                     })
         
         radar_ph.empty()
+        
         if not unmapped_items:
             st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
             st.session_state['inbox_data'] = None
@@ -787,7 +806,7 @@ with tab4:
             
     if st.session_state.get('inbox_data'):
         st.warning(f"📥 系統從 `{st.session_state['radar_sup']}` 的報價單中，發現了 **{len(st.session_state['inbox_data'])}** 個未追蹤的產品！")
-        st.write("請勾選「✔️ 寫入 Mapping」，確認右方的下拉選單無誤後按下寫入。（沒有打勾的將會被系統忽略）")
+        st.write("請勾選「✔️ 寫入 Mapping」，並可手動微調 `✏️ 手動新價(LB)`。確認後按下寫入，系統會幫你同時完成 Mapping 綁定與價錢更新！")
         
         col_btn1, col_btn2, _ = st.columns([1, 1, 3])
         with col_btn1:
@@ -800,43 +819,105 @@ with tab4:
                 st.rerun()
 
         inbox_df = pd.DataFrame(st.session_state['inbox_data'])
+        inbox_df = inbox_df[["✔️ 寫入 Mapping", "報價單原文", "對應母表產品 (AI建議)", "✏️ 手動新價(LB)", "👀 系統試抓價錢"]]
+        
         edited_inbox = st.data_editor(
             inbox_df,
             column_config={
                 "✔️ 寫入 Mapping": st.column_config.CheckboxColumn("✔️ 寫入 Mapping"),
                 "報價單原文": st.column_config.TextColumn("報價單原文", disabled=True),
-                "👀 系統試抓價錢": st.column_config.TextColumn("👀 系統試抓價錢", disabled=True, help="讓你驗證系統是否能正確讀取這行的價錢"),
-                "對應母表產品 (AI建議)": st.column_config.SelectboxColumn("對應母表產品 (AI建議)", options=all_db_options)
+                "對應母表產品 (AI建議)": st.column_config.SelectboxColumn("對應母表產品 (AI建議)", options=all_db_options),
+                "✏️ 手動新價(LB)": st.column_config.NumberColumn("✏️ 手動新價(LB)", format="%.1f", min_value=0.0),
+                "👀 系統試抓價錢": st.column_config.TextColumn("👀 系統試抓價錢", disabled=True)
             },
             use_container_width=True, hide_index=True, height=500
         )
         
-        if st.button("💾 將打勾的項目寫入 Mapping", type="primary"):
+        if st.button("💾 將打勾的項目寫入 Mapping 並同步更新價錢", type="primary"):
             loading_ph5 = st.empty()
             loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            
             gc, sh, _ = get_google_connection()
             map_ws = sh.worksheet('Mapping')
+            
             map_adds = []
+            updates_by_sheet = {}
+            history_records = []
+            
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
+            quote_date_str = st.session_state.get('radar_date_str', sys_today.split()[0])
             
             for idx, row in edited_inbox.iterrows():
                 if row["✔️ 寫入 Mapping"]:
                     raw_name = row["報價單原文"]
                     selected_sku_str = row["對應母表產品 (AI建議)"]
+                    manual_price = row["✏️ 手動新價(LB)"]
+                    
                     if "請選擇" in selected_sku_str:
                         st.error(f"❌ 產品 `{raw_name}` 已打勾，但沒有指定對應的母表產品！")
                         loading_ph5.empty()
                         st.stop()
+                        
                     match = re.search(r'\[(.*?)\]', selected_sku_str)
                     if match:
                         pure_sku = match.group(1)
+                        # 1. 加入 Mapping 佇列
                         map_adds.append([st.session_state['radar_sup'], raw_name, pure_sku])
+                        
+                        # 2. 加入價錢更新佇列 (智慧尋找對應的分頁與欄位)
+                        if pd.notna(manual_price) and float(manual_price) > 0:
+                            val_lb = float(manual_price)
+                            val_kg = round(val_lb * 2.2046, 1)
+                            
+                            target_sn = None
+                            target_row_idx = -1
+                            for sn, vals in cat_data.items():
+                                if not vals: continue
+                                for r_idx, r in enumerate(vals):
+                                    if r_idx < 2 or not r: continue
+                                    if str(r[0]).strip() == pure_sku:
+                                        target_sn = sn
+                                        target_row_idx = r_idx + 1 # 1-based index for gspread
+                                        break
+                                if target_sn: break
+                                
+                            if target_sn:
+                                lb_col, kg_col = -1, -1
+                                for r_idx in range(min(10, len(cat_data[target_sn]))):
+                                    for c_idx, cv in enumerate(cat_data[target_sn][r_idx]):
+                                        c_str = clean_string(str(cv))
+                                        sup_headers = HEADER_MAP.get(st.session_state['radar_sup'], {})
+                                        if clean_string(sup_headers.get("LB", "")) in c_str: lb_col = c_idx + 1
+                                        if clean_string(sup_headers.get("KG", "")) in c_str: kg_col = c_idx + 1
+                                    if lb_col != -1 or kg_col != -1: break
+                                
+                                bg_color = color(1.0, 0.95, 0.6) # 新增項目的高光色
+                                fmt = cellFormat(backgroundColor=bg_color)
+                                
+                                if lb_col != -1:
+                                    cell_a1 = gspread.utils.rowcol_to_a1(target_row_idx, lb_col)
+                                    updates_by_sheet.setdefault(target_sn, []).append({'range': cell_a1, 'values': [[val_lb]]})
+                                if kg_col != -1:
+                                    cell_a1 = gspread.utils.rowcol_to_a1(target_row_idx, kg_col)
+                                    updates_by_sheet.setdefault(target_sn, []).append({'range': cell_a1, 'values': [[val_kg]]})
+                                    
+                                history_records.append([sys_today, quote_date_str, st.session_state['radar_sup'], pure_sku, raw_name, val_lb, val_kg])
             
+            # 執行雲端大批次寫入
             if map_adds: 
                 map_ws.append_rows(map_adds)
+            if updates_by_sheet:
+                for sn, upds in updates_by_sheet.items():
+                    sh.worksheet(sn).batch_update(upds)
+            if history_records:
+                sh.worksheet('History_Log').append_rows(history_records)
+                
+            if map_adds or updates_by_sheet:
                 fetch_all_google_data.clear()
                 loading_ph5.empty()
                 st.balloons()
-                st.success(f"🎉 批次處理成功！成功新增了 {len(map_adds)} 筆 Mapping！")
+                st.success(f"🎉 批次處理成功！新增了 {len(map_adds)} 筆 Mapping，並成功同步更新價錢！")
                 st.session_state['inbox_data'] = None
                 time.sleep(2)
                 st.rerun()
@@ -898,30 +979,3 @@ with tab4:
             st.dataframe(df_errors, use_container_width=True, hide_index=True)
         else:
             st.balloons(); st.success("✅ 體檢完美通過！沒有發現任何邏輯錯誤。")
-
-    st.markdown("---")
-    st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 快速管理")
-    if ignore_dict:
-        st.write("📋 **目前黑名單內容：**")
-        ignore_rows = []
-        for sup, vals in ignore_dict.items():
-            for v in vals: ignore_rows.append({"供應商": sup, "忽略的原文關鍵字": v})
-        st.dataframe(pd.DataFrame(ignore_rows), use_container_width=True, hide_index=True)
-    else: st.info("目前沒有任何黑名單設定。")
-
-    with st.form("add_ignore_form"):
-        col_ig1, col_ig2 = st.columns([1, 2])
-        with col_ig1: ig_sup = st.selectbox("選擇供應商", ACTIVE_SUPPLIERS)
-        with col_ig2: ig_val = st.text_input("輸入要忽略的產品原文 / 關鍵字 (如: 膠袋, 運費)")
-        submit_ig = st.form_submit_button("➕ 快速加入單筆黑名單", use_container_width=True)
-        
-        if submit_ig and ig_val:
-            gc, sh, _ = get_google_connection()
-            ig_ws = sh.worksheet('Ignore_List')
-            hk_tz = pytz.timezone('Asia/Hong_Kong')
-            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
-            ig_ws.append_row([ig_sup, ig_val, sys_today])
-            fetch_all_google_data.clear()
-            st.success(f"✅ 已將 `{ig_val}` 加入 {ig_sup} 的黑名單！")
-            time.sleep(1.5)
-            st.rerun()
