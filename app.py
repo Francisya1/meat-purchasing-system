@@ -94,6 +94,69 @@ def get_wavy_loading_html():
     spans = "".join([f"<span style='animation-delay: {i*0.1}s'>{c}</span>" for i, c in enumerate(chars)])
     return f"<div class='wave-text'>{spans}</div>"
 
+# 💡 核心外掛：深度救援掃描器 (對付殘缺表格)
+def extract_robust_pool(pdf_bytes, supplier):
+    robust_pool = {}
+    with pdfplumber.open(pdf_bytes) as pdf:
+        for page in pdf.pages:
+            lines = []
+            text = page.extract_text()
+            if text: lines.extend(text.split('\n'))
+            tables = page.extract_tables()
+            for table in tables:
+                for row in table:
+                    row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
+                    lines.append(row_str)
+                    
+            for line in lines:
+                if supplier in ["萬安(遠東)", "浩新"]:
+                    matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                    for match in matches:
+                        raw_name = match.group(1).strip()
+                        raw_name = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name, flags=re.IGNORECASE).strip()
+                        raw_name = re.sub(r'[\$\s/\|]+$', '', raw_name).strip()
+                        price_str = match.group(2)
+                        unit_str = match.group(3) if match.group(3) else ""
+                        
+                        c_raw = clean_string(raw_name)
+                        if len(c_raw) > 2:
+                            robust_pool[c_raw] = {'price': price_str, 'unit': unit_str, 'raw_name': raw_name}
+                elif supplier == "形澧":
+                    line = line.strip()
+                    if len(line) < 5: continue
+                    tokens = re.split(r'\s+|\|', line)
+                    raw_price = 0.0
+                    price_str_for_split = ""
+                    for token in reversed(tokens):
+                        token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                        if token_clean:
+                            if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                if nums:
+                                    val = float(nums[0])
+                                    if val > 0:
+                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
+                                        raw_price = val
+                                        price_str_for_split = token
+                                        break
+                    if raw_price > 0:
+                        raw_name = line.rsplit(price_str_for_split, 1)[0].strip()
+                        raw_name = re.sub(r'[\s\|]+$', '', raw_name)
+                        c_raw = clean_string(raw_name)
+                        if len(c_raw) > 2:
+                            robust_pool[c_raw] = {'price': raw_price, 'unit': "", 'raw_name': raw_name}
+                else:
+                    from modules.pdf_xray import parse_supplier_row
+                    parts = parse_supplier_row(supplier, [line])
+                    for part in parts:
+                        p_name = part[0]
+                        if "@@@" in p_name: p_name = p_name.split("@@@")[0]
+                        c_raw = clean_string(p_name)
+                        if len(c_raw) > 2:
+                            robust_pool[c_raw] = {'price': part[1], 'unit': part[2], 'raw_name': p_name}
+    return robust_pool
+
 def check_password():
     if "login_success" not in st.session_state:
         st.markdown("<br><br>", unsafe_allow_html=True)
@@ -176,7 +239,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v23.1 (Bug 修復版)")
+    st.caption("版本號: v24.0 (深度搜救與解盲版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -219,6 +282,26 @@ with tab1:
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
                 
+                # 💡 外掛：深度救援掃描器 (挽救浩新等斷片產品)
+                pdf_bytes.seek(0)
+                robust_pool = extract_robust_pool(pdf_bytes, selected_supplier)
+                sku_to_raw = {t['sku']: t['name'] for t in targets}
+                for sku, raw_name in sku_to_raw.items():
+                    if sku not in extracted_items or extracted_items[sku]['guessed_unit'] == "SOLD_OUT":
+                        clean_target = clean_string(raw_name)
+                        for c_raw, r_data in robust_pool.items():
+                            if clean_target in c_raw or c_raw in clean_target:
+                                price_val = r_data['price']
+                                if price_val == "清" or "sold" in str(price_val).lower():
+                                    extracted_items[sku] = {'raw_price': 0.0, 'guessed_unit': 'SOLD_OUT', 'raw_name': r_data['raw_name'], 'matched_line': '深層救援成功'}
+                                else:
+                                    try:
+                                        p_f = float(price_val)
+                                        g_u = "KG" if "kg" in clean_string(r_data['unit']) else "LB"
+                                        extracted_items[sku] = {'raw_price': p_f, 'guessed_unit': g_u, 'raw_name': r_data['raw_name'], 'matched_line': '深層救援成功'}
+                                    except: pass
+                                break
+
                 history_lows = {}
                 for x in parsed_history:
                     if x['sku'] not in history_lows or x['price'] < history_lows[x['sku']]:
@@ -253,23 +336,6 @@ with tab1:
                         if sku_db in extracted_items:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
-                            
-                            if selected_supplier == "形澧":
-                                matched_line_str = str(data.get('matched_line', '')).strip()
-                                if matched_line_str and matched_line_str != "-":
-                                    tokens = re.split(r'\s+|\|', matched_line_str)
-                                    for token in reversed(tokens):
-                                        token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                                        if token_clean:
-                                            if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                                nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                                if nums:
-                                                    val = float(nums[0])
-                                                    if val > 0:
-                                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                                        raw_price = val
-                                                        break
                             
                             status = "🆕 新增"; delta_str = "-"; is_anomaly = False
                             is_sold_out_detected = (unit == "SOLD_OUT")
@@ -451,8 +517,9 @@ with tab2:
                     if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                         for sup_name, cols in sup_cols.items():
                             lb_col_idx = cols["LB"]
-                            if lb_col_idx != -1 and lb_col_idx < len(r):
-                                p_val_str = str(r[lb_col_idx]).strip()
+                            # 💡 終極解盲：取消列長度限制，強制顯示所有命中產品
+                            if lb_col_idx != -1:
+                                p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx < len(r) else ""
                                 nums = re.findall(r'\d+\.?\d*', p_val_str)
                                 is_sold_out_now = "sold out" in p_val_str.lower() or not nums
                                 hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
@@ -635,8 +702,8 @@ with tab3:
                     current_prices = {}
                     for sup_name, cols in sup_cols.items():
                         lb_col = cols["LB"]
-                        if lb_col != -1 and lb_col < len(row):
-                            val_str = str(row[lb_col]).strip()
+                        if lb_col != -1:
+                            val_str = str(row[lb_col]).strip() if lb_col < len(row) else ""
                             nums = re.findall(r'\d+\.?\d*', val_str)
                             if nums and float(nums[0]) > 0 and "sold out" not in val_str.lower():
                                 current_prices[sup_name] = round(float(nums[0]), 1)
@@ -733,40 +800,30 @@ with tab4:
         from modules.pdf_xray import parse_supplier_row, deep_decode_item
         
         pdf_bytes = io.BytesIO(radar_file.read())
-        unmapped_items = []
-        seen_names = set()
+        
+        robust_pool = extract_robust_pool(pdf_bytes, radar_sup)
         
         existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
         ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
         
-        def process_inbox_item(raw_name_text, price_str, unit_str):
-            raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
-            raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
-            clean_raw = clean_string(raw_name_text)
-            
-            if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): return
-            if clean_raw in seen_names: return
-            seen_names.add(clean_raw)
-            
-            is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
-            is_ignored = any(ig in clean_raw for ig in ignored_items)
+        unmapped_items = []
+        for c_raw, r_data in robust_pool.items():
+            is_mapped = any(em in c_raw or c_raw in em for em in existing_mappings)
+            is_ignored = any(ig in c_raw for ig in ignored_items)
             
             if not is_mapped and not is_ignored:
-                if price_str == "清" or "sold" in str(price_str).lower():
-                    price_val = 0.0
+                price_val = r_data['price']
+                if price_val == "清" or "sold" in str(price_val).lower():
+                    price_num = 0.0
                     preview_price = "Sold out (清)"
                 else:
-                    try:
-                        price_val = float(price_str)
-                        if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
-                        price_val = round(price_val, 1)
-                    except:
-                        price_val = 0.0
-                    preview_price = f"${price_val} / LB"
-                
-                expanded_keywords = set([clean_raw])
+                    try: price_num = float(price_val)
+                    except: price_num = 0.0
+                    preview_price = f"${price_num} / LB"
+                    
+                expanded_keywords = set([c_raw])
                 for key, aliases in STATIC_DICT.items():
-                    if any(a in clean_raw for a in aliases):
+                    if any(a in c_raw for a in aliases):
                         expanded_keywords.update(aliases)
                         expanded_keywords.add(key)
                 
@@ -779,10 +836,10 @@ with tab4:
                     opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
                     if not opt_words: opt_words = [opt_clean]
                     for w in opt_words:
-                        if w in clean_raw: score += len(w) * 2
+                        if w in c_raw: score += len(w) * 2
                     for key, aliases in STATIC_DICT.items():
                         all_terms = [key] + aliases
-                        if any(clean_string(t) in clean_raw for t in all_terms):
+                        if any(clean_string(t) in c_raw for t in all_terms):
                             if any(clean_string(t) in opt_clean for t in all_terms):
                                 score += 10
                     if score > max_score and score > 0:
@@ -791,68 +848,20 @@ with tab4:
                         
                 unmapped_items.append({
                     "✔️ 寫入 Mapping": False,
-                    "報價單原文": raw_name_text,
+                    "報價單原文": r_data['raw_name'],
                     "對應母表產品 (AI建議)": best_match,
-                    "✏️ 手動新價(LB)": price_val,
+                    "✏️ 手動新價(LB)": price_num,
                     "👀 系統試抓價錢": preview_price
                 })
-
-        with pdfplumber.open(pdf_bytes) as pdf:
-            for page in pdf.pages:
-                lines = []
-                text = page.extract_text()
-                if text: lines.extend(text.split('\n'))
-                
-                tables = page.extract_tables()
-                for table in tables:
-                    for row in table:
-                        row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
-                        lines.append(row_str)
-                
-                if radar_sup == "形澧":
-                    for line in lines:
-                        line = line.strip()
-                        if len(line) < 5: continue
-                        tokens = re.split(r'\s+|\|', line)
-                        raw_price = 0.0
-                        price_str_for_split = ""
-                        for token in reversed(tokens):
-                            token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                            if token_clean:
-                                if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                    nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                    if nums:
-                                        val = float(nums[0])
-                                        if val > 0:
-                                            if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                            if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                            raw_price = val
-                                            price_str_for_split = token
-                                            break
-                        if raw_price > 0:
-                            raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
-                            process_inbox_item(raw_name_text, str(raw_price), "")
-                else:
-                    for line in lines:
-                        matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
-                        for match in matches:
-                            process_inbox_item(match.group(1), match.group(2), match.group(3) if match.group(3) else "")
-                    
-                    for table in tables:
-                        for row in table:
-                            cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
-                            extracted_parts = parse_supplier_row(radar_sup, cells)
-                            for part in extracted_parts:
-                                p_name = part[0]
-                                if "@@@" in p_name: p_name = p_name.split("@@@")[0]
-                                process_inbox_item(p_name, part[1], part[2])
         
         radar_ph.empty()
+        
         if not unmapped_items:
             st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
             st.session_state['inbox_data'] = None
         else:
-            st.session_state['inbox_data'] = unmapped_items
+            unique_unmapped = {item["報價單原文"]: item for item in unmapped_items}.values()
+            st.session_state['inbox_data'] = list(unique_unmapped)
             st.session_state['radar_sup'] = radar_sup
             
     if st.session_state.get('inbox_data'):
