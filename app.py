@@ -167,7 +167,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v19.0 (萬安切割 & 價格聯動寫入版)")
+    st.caption("版本號: v20.0 (形澧盲掃特權修復版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -397,7 +397,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋
+# 📌 分頁二：日常搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -519,6 +519,39 @@ with tab2:
                                                 raw_name_text = re.sub(r'^抄碼\s*', '', raw_name_text).strip()
                                                 if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
                                                     origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, "")
+                                                    if price_lb and price_kg:
+                                                        cloud_db.append({
+                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                                        })
+                                # 💡 Tab 2 形澧專屬盲掃通道：使用正則分割文字行
+                                elif supplier == "形澧":
+                                    text = page.extract_text()
+                                    if text:
+                                        for line in text.split('\n'):
+                                            line = line.strip()
+                                            if len(line) < 5: continue
+                                            tokens = re.split(r'\s+|\|', line)
+                                            raw_price = 0.0
+                                            price_str_for_split = ""
+                                            for token in reversed(tokens):
+                                                token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                                                if token_clean:
+                                                    if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                                        nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                                        if nums:
+                                                            val = float(nums[0])
+                                                            if val > 0:
+                                                                if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                                                if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
+                                                                raw_price = val
+                                                                price_str_for_split = token
+                                                                break
+                                            if raw_price > 0:
+                                                raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
+                                                raw_name_text = re.sub(r'[\s\|]+$', '', raw_name_text)
+                                                if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
+                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, str(raw_price), "")
                                                     if price_lb and price_kg:
                                                         cloud_db.append({
                                                             "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
@@ -652,7 +685,7 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 (實裝聯動寫入與萬安正則)
+# 📌 分頁四：⚙️ 系統管理與防呆中心 
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
@@ -661,7 +694,6 @@ with tab4:
     st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
     st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來。確認無誤後，系統會幫你同步建立 Mapping 與寫入最新價錢！")
     
-    # 💡 移除 Emoji 枷鎖，釋放鍵盤搜尋威力
     all_db_options = ["請選擇對應產品..."]
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
@@ -696,7 +728,6 @@ with tab4:
         
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                # 💡 萬安專屬的「細胞分裂正則引擎」，精準切開黏在一起的字串
                 if radar_sup == "萬安(遠東)":
                     text = page.extract_text()
                     if text:
@@ -746,6 +777,62 @@ with tab4:
                                         "報價單原文": raw_name_text.strip(),
                                         "對應母表產品 (AI建議)": best_match,
                                         "✏️ 手動新價(LB)": price_val,
+                                        "👀 系統試抓價錢": preview_price
+                                    })
+                # 💡 Tab 4 形澧專屬掃描：文字逐行切割引擎
+                elif radar_sup == "形澧":
+                    text = page.extract_text()
+                    if text:
+                        for line in text.split('\n'):
+                            line = line.strip()
+                            if len(line) < 5: continue
+                            tokens = re.split(r'\s+|\|', line)
+                            raw_price = 0.0
+                            price_str_for_split = ""
+                            for token in reversed(tokens):
+                                token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                                if token_clean:
+                                    if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                        nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                        if nums:
+                                            val = float(nums[0])
+                                            if val > 0:
+                                                if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                                if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
+                                                raw_price = val
+                                                price_str_for_split = token
+                                                break
+                            if raw_price > 0:
+                                raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
+                                raw_name_text = re.sub(r'[\s\|]+$', '', raw_name_text)
+                                clean_raw = clean_string(raw_name_text)
+                                
+                                if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
+                                
+                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
+                                is_ignored = any(ig in clean_raw for ig in ignored_items)
+                                
+                                if not is_mapped and not is_ignored:
+                                    preview_price = f"${raw_price} / LB"
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
+                                    best_match = "請選擇對應產品..."
+                                    max_score = 0
+                                    for opt in all_db_options:
+                                        if opt == "請選擇對應產品...": continue
+                                        clean_opt = clean_string(opt)
+                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        if score > max_score and score > 0:
+                                            max_score = score
+                                            best_match = opt
+                                    unmapped_items.append({
+                                        "✔️ 寫入 Mapping": False,
+                                        "報價單原文": raw_name_text.strip(),
+                                        "對應母表產品 (AI建議)": best_match,
+                                        "✏️ 手動新價(LB)": raw_price,
                                         "👀 系統試抓價錢": preview_price
                                     })
                 else:
@@ -862,10 +949,8 @@ with tab4:
                     match = re.search(r'\[(.*?)\]', selected_sku_str)
                     if match:
                         pure_sku = match.group(1)
-                        # 1. 加入 Mapping 佇列
                         map_adds.append([st.session_state['radar_sup'], raw_name, pure_sku])
                         
-                        # 2. 加入價錢更新佇列 (智慧尋找對應的分頁與欄位)
                         if pd.notna(manual_price) and float(manual_price) > 0:
                             val_lb = float(manual_price)
                             val_kg = round(val_lb * 2.2046, 1)
@@ -878,7 +963,7 @@ with tab4:
                                     if r_idx < 2 or not r: continue
                                     if str(r[0]).strip() == pure_sku:
                                         target_sn = sn
-                                        target_row_idx = r_idx + 1 # 1-based index for gspread
+                                        target_row_idx = r_idx + 1
                                         break
                                 if target_sn: break
                                 
@@ -892,7 +977,7 @@ with tab4:
                                         if clean_string(sup_headers.get("KG", "")) in c_str: kg_col = c_idx + 1
                                     if lb_col != -1 or kg_col != -1: break
                                 
-                                bg_color = color(1.0, 0.95, 0.6) # 新增項目的高光色
+                                bg_color = color(1.0, 0.95, 0.6) 
                                 fmt = cellFormat(backgroundColor=bg_color)
                                 
                                 if lb_col != -1:
@@ -904,7 +989,6 @@ with tab4:
                                     
                                 history_records.append([sys_today, quote_date_str, st.session_state['radar_sup'], pure_sku, raw_name, val_lb, val_kg])
             
-            # 執行雲端大批次寫入
             if map_adds: 
                 map_ws.append_rows(map_adds)
             if updates_by_sheet:
@@ -979,3 +1063,30 @@ with tab4:
             st.dataframe(df_errors, use_container_width=True, hide_index=True)
         else:
             st.balloons(); st.success("✅ 體檢完美通過！沒有發現任何邏輯錯誤。")
+
+    st.markdown("---")
+    st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 快速管理")
+    if ignore_dict:
+        st.write("📋 **目前黑名單內容：**")
+        ignore_rows = []
+        for sup, vals in ignore_dict.items():
+            for v in vals: ignore_rows.append({"供應商": sup, "忽略的原文關鍵字": v})
+        st.dataframe(pd.DataFrame(ignore_rows), use_container_width=True, hide_index=True)
+    else: st.info("目前沒有任何黑名單設定。")
+
+    with st.form("add_ignore_form"):
+        col_ig1, col_ig2 = st.columns([1, 2])
+        with col_ig1: ig_sup = st.selectbox("選擇供應商", ACTIVE_SUPPLIERS)
+        with col_ig2: ig_val = st.text_input("輸入要忽略的產品原文 / 關鍵字 (如: 膠袋, 運費)")
+        submit_ig = st.form_submit_button("➕ 快速加入單筆黑名單", use_container_width=True)
+        
+        if submit_ig and ig_val:
+            gc, sh, _ = get_google_connection()
+            ig_ws = sh.worksheet('Ignore_List')
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            sys_today = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
+            ig_ws.append_row([ig_sup, ig_val, sys_today])
+            fetch_all_google_data.clear()
+            st.success(f"✅ 已將 `{ig_val}` 加入 {ig_sup} 的黑名單！")
+            time.sleep(1.5)
+            st.rerun()
