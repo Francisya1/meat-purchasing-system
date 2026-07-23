@@ -94,9 +94,6 @@ def get_wavy_loading_html():
     spans = "".join([f"<span style='animation-delay: {i*0.1}s'>{c}</span>" for i, c in enumerate(chars)])
     return f"<div class='wave-text'>{spans}</div>"
 
-# ==========================================
-# 💡 核心引擎：智慧表頭尋找器 (無懼格式差異)
-# ==========================================
 def find_price_columns(vals, supplier):
     lb_col, kg_col = -1, -1
     sup_clean = clean_string(supplier)
@@ -122,6 +119,7 @@ def find_price_columns(vals, supplier):
         if lb_col != -1 or kg_col != -1: break
     return lb_col, kg_col
 
+# 💡 核心外掛：深度救援掃描器 (對付殘缺表格與重量干擾)
 def extract_robust_pool(pdf_bytes, supplier):
     robust_pool = {}
     with pdfplumber.open(pdf_bytes) as pdf:
@@ -151,28 +149,32 @@ def extract_robust_pool(pdf_bytes, supplier):
                 elif supplier == "形澧":
                     line = line.strip()
                     if len(line) < 5: continue
+                    # 消除重量與單位的空格干擾
+                    line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
+                    line = re.sub(r'\s*([*xX])\s*', r'\1', line)
                     tokens = re.split(r'\s+|\|', line)
                     raw_price = 0.0
                     price_str_for_split = ""
                     for token in reversed(tokens):
-                        token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                        if token_clean:
-                            if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                if nums:
-                                    val = float(nums[0])
-                                    if val > 0:
-                                        if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                        if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                        raw_price = val
-                                        price_str_for_split = token
-                                        break
+                        # 保留純淨文字與數字
+                        tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
+                        if not tc: continue
+                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                        if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
+                        
+                        # 💡 終極防線：必須是純淨的數字或小數，絕不能含有英文字母
+                        if re.match(r'^\d+(?:\.\d+)?$', tc):
+                            val = float(tc)
+                            if val > 0:
+                                raw_price = val
+                                price_str_for_split = token
+                                break
                     if raw_price > 0:
                         raw_name = line.rsplit(price_str_for_split, 1)[0].strip()
                         raw_name = re.sub(r'[\s\|]+$', '', raw_name)
                         c_raw = clean_string(raw_name)
                         if len(c_raw) > 2:
-                            robust_pool[c_raw] = {'price': raw_price, 'unit': "", 'raw_name': raw_name}
+                            robust_pool[c_raw] = {'price': str(raw_price), 'unit': "", 'raw_name': raw_name}
                 else:
                     from modules.pdf_xray import parse_supplier_row
                     parts = parse_supplier_row(supplier, [line])
@@ -266,7 +268,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v25.0 (智慧表頭追蹤引擎版)")
+    st.caption("版本號: v25.0 (形澧純淨數字鎖定版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -309,7 +311,6 @@ with tab1:
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
                 
-                # 深度救援掃描器
                 pdf_bytes.seek(0)
                 robust_pool = extract_robust_pool(pdf_bytes, selected_supplier)
                 sku_to_raw = {t['sku']: t['name'] for t in targets}
@@ -337,8 +338,6 @@ with tab1:
                 all_preview = []
                 for sheet_name, all_vals in cat_data.items():
                     if not all_vals: continue
-                    
-                    # 💡 導入智慧表頭追蹤引擎
                     lb_col, kg_col = find_price_columns(all_vals, selected_supplier)
 
                     for row_idx, r in enumerate(all_vals):
@@ -359,6 +358,26 @@ with tab1:
                         if sku_db in extracted_items:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
+                            
+                            # 💡 針對形澧的純淨文字解盲系統
+                            if selected_supplier == "形澧":
+                                m_line = str(data.get('matched_line', '')).strip()
+                                if m_line and m_line != "-":
+                                    m_line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', m_line, flags=re.IGNORECASE)
+                                    m_line = re.sub(r'\s*([*xX])\s*', r'\1', m_line)
+                                    tokens = re.split(r'\s+|\|', m_line)
+                                    for token in reversed(tokens):
+                                        tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
+                                        if not tc: continue
+                                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                                        if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
+                                        # 必須是完美小數或整數
+                                        if re.match(r'^\d+(?:\.\d+)?$', tc):
+                                            val = float(tc)
+                                            if val > 0:
+                                                raw_price = val
+                                                data['raw_price'] = raw_price
+                                                break
                             
                             status = "🆕 新增"; delta_str = "-"; is_anomaly = False
                             is_sold_out_detected = (unit == "SOLD_OUT")
@@ -389,7 +408,6 @@ with tab1:
                                 elif "➖" in status: sort_key = 4
                                 else: sort_key = 3
                                 
-                                # 防呆警告：如果成功掃到產品，但母表沒欄位寫入
                                 if lb_col == -1: status = "⚠️ 母表無價錢欄位"
 
                             all_preview.append({
@@ -497,7 +515,7 @@ with tab1:
                     time.sleep(1.5)
                     st.rerun()
                 else:
-                    loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料，或母表無對應欄位可寫入。")
+                    loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
 # 📌 分頁二：日常搜尋
@@ -528,12 +546,10 @@ with tab2:
             for sn, all_vals in cat_data.items():
                 if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue
                 if not all_vals: continue
-                
-                # 💡 導入智慧表頭追蹤引擎
                 sup_cols = {}
                 for sup_name in HEADER_MAP.keys():
                     lb_col, _ = find_price_columns(all_vals, sup_name)
-                    sup_cols[sup_name] = {"LB": lb_col - 1} # 轉換為 index
+                    sup_cols[sup_name] = {"LB": lb_col - 1} 
 
                 for row_idx, r in enumerate(all_vals[2:]):
                     if not r: continue
@@ -546,22 +562,21 @@ with tab2:
                     if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                         for sup_name, cols in sup_cols.items():
                             lb_col_idx = cols["LB"]
-                            
-                            # 💡 終極解盲：就算找不到價錢欄位，或價錢空白，也強制列出！
-                            p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx != -2 and lb_col_idx < len(r) else ""
-                            nums = re.findall(r'\d+\.?\d*', p_val_str)
-                            is_sold_out_now = "sold out" in p_val_str.lower() or not nums
-                            hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
-                            valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
-                            if is_sold_out_now and len(valid_past_prices) > 0: hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
-                            elif not is_sold_out_now:
-                                display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
-                                if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
-                            
-                            compare_results.append({
-                                "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
-                                "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
-                            })
+                            if lb_col_idx != -1:
+                                p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx != -2 and lb_col_idx < len(r) else ""
+                                nums = re.findall(r'\d+\.?\d*', p_val_str)
+                                is_sold_out_now = "sold out" in p_val_str.lower() or not nums
+                                hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
+                                valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
+                                if is_sold_out_now and len(valid_past_prices) > 0: hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
+                                elif not is_sold_out_now:
+                                    display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
+                                    if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
+                                
+                                compare_results.append({
+                                    "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
+                                    "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
+                                })
             search_ph1.empty()
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
@@ -639,22 +654,22 @@ with tab2:
                                     for line in lines:
                                         line = line.strip()
                                         if len(line) < 5: continue
+                                        line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
+                                        line = re.sub(r'\s*([*xX])\s*', r'\1', line)
                                         tokens = re.split(r'\s+|\|', line)
                                         raw_price = 0.0
                                         price_str_for_split = ""
                                         for token in reversed(tokens):
-                                            token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                                            if token_clean:
-                                                if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                                    nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                                    if nums:
-                                                        val = float(nums[0])
-                                                        if val > 0:
-                                                            if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                                            if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                                            raw_price = val
-                                                            price_str_for_split = token
-                                                            break
+                                            tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
+                                            if not tc: continue
+                                            if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                                            if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
+                                            if re.match(r'^\d+(?:\.\d+)?$', tc):
+                                                val = float(tc)
+                                                if val > 0:
+                                                    raw_price = val
+                                                    price_str_for_split = token
+                                                    break
                                         if raw_price > 0:
                                             raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
                                             process_cloud_item(raw_name_text, str(raw_price), "", supplier, file['name'])
@@ -715,8 +730,6 @@ with tab3:
         bulk_matches = []
         for sn, all_vals in cat_data.items():
             if not all_vals: continue
-            
-            # 💡 導入智慧表頭追蹤引擎
             sup_cols = {}
             for sup_name in HEADER_MAP.keys():
                 lb_col, _ = find_price_columns(all_vals, sup_name)
@@ -971,7 +984,6 @@ with tab4:
                                 if target_sn: break
                                 
                             if target_sn:
-                                # 💡 導入智慧表頭追蹤引擎
                                 lb_col, kg_col = find_price_columns(cat_data[target_sn], st.session_state['radar_sup'])
                                 
                                 bg_color = color(1.0, 0.95, 0.6) 
