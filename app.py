@@ -128,7 +128,6 @@ HEADER_MAP = {
 }
 FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧" }
 
-# 💡 終極強化的 AI 肉類智能字典
 STATIC_DICT = {
     "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"],
     "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll", "chuck", "上腦"],
@@ -177,7 +176,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v21.0 (AI 高階切詞配對版)")
+    st.caption("版本號: v22.0 (浩新表格防呆切割版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -407,7 +406,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋
+# 📌 分頁二：日常搜尋 
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -517,17 +516,22 @@ with tab2:
                         
                         with pdfplumber.open(fh) as pdf:
                             for page in pdf.pages:
-                                if supplier == "萬安(遠東)":
+                                # 💡 萬安 & 浩新 專屬盲掃通道：使用正則分割文字行
+                                if supplier in ["萬安(遠東)", "浩新"]:
                                     text = page.extract_text()
                                     if text:
                                         for line in text.split('\n'):
                                             line = line.strip()
-                                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
                                             for match in matches:
                                                 raw_name_text = match.group(1).strip()
                                                 price_str = match.group(2)
-                                                raw_name_text = re.sub(r'^抄碼\s*', '', raw_name_text).strip()
+                                                
+                                                raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?K[Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
+                                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
+                                                
                                                 if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
+                                                    if price_str == "清": continue
                                                     origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, "")
                                                     if price_lb and price_kg:
                                                         cloud_db.append({
@@ -694,7 +698,7 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心
+# 📌 分頁四：⚙️ 系統管理與防呆中心 
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
@@ -737,18 +741,20 @@ with tab4:
         
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                if radar_sup == "萬安(遠東)":
+                # 💡 萬安 & 浩新 專屬文字逐行引擎，完美破解黏連表格
+                if radar_sup in ["萬安(遠東)", "浩新"]:
                     text = page.extract_text()
                     if text:
                         for line in text.split('\n'):
                             line = line.strip()
-                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
                             for match in matches:
                                 raw_name_text = match.group(1).strip()
                                 price_str = match.group(2)
                                 unit_str = match.group(3) if match.group(3) else ""
                                 
-                                raw_name_text = re.sub(r'^抄碼\s*', '', raw_name_text).strip()
+                                # 自動剔除浩新的重量干擾字眼
+                                raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?K[Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
                                 clean_raw = clean_string(raw_name_text)
                                 
                                 if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
@@ -757,16 +763,23 @@ with tab4:
                                 is_ignored = any(ig in clean_raw for ig in ignored_items)
                                 
                                 if not is_mapped and not is_ignored:
-                                    try:
-                                        price_val = float(price_str)
-                                        if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
-                                        price_val = round(price_val, 1)
-                                    except:
+                                    if price_str == "清":
                                         price_val = 0.0
-                                        
-                                    preview_price = f"${price_val} / LB"
+                                        preview_price = "Sold out (清)"
+                                    else:
+                                        try:
+                                            price_val = float(price_str)
+                                            if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
+                                            price_val = round(price_val, 1)
+                                        except:
+                                            price_val = 0.0
+                                        preview_price = f"${price_val} / LB"
                                     
-                                    # 💡 終極 AI 動態切詞計分演算法
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
@@ -830,8 +843,11 @@ with tab4:
                                 
                                 if not is_mapped and not is_ignored:
                                     preview_price = f"${raw_price} / LB"
-                                    
-                                    # 💡 終極 AI 動態切詞計分演算法
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
@@ -853,7 +869,6 @@ with tab4:
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
-                                            
                                     unmapped_items.append({
                                         "✔️ 寫入 Mapping": False,
                                         "報價單原文": raw_name_text.strip(),
@@ -884,7 +899,11 @@ with tab4:
                                     price_val = price_lb if price_lb else 0.0
                                     preview_price = f"${price_val} / LB" if price_val else "無法辨識/斷貨"
 
-                                    # 💡 終極 AI 動態切詞計分演算法
+                                    expanded_keywords = set([clean_raw])
+                                    for key, aliases in STATIC_DICT.items():
+                                        if any(a in clean_raw for a in aliases):
+                                            expanded_keywords.update(aliases)
+                                            expanded_keywords.add(key)
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
