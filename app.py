@@ -128,10 +128,20 @@ HEADER_MAP = {
 }
 FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧" }
 
+# 💡 終極強化的 AI 肉類智能字典
 STATIC_DICT = {
-    "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll"],
+    "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"],
+    "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll", "chuck", "上腦"],
     "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"],
-    "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"], "金錢展": ["金展", "金錢展", "金錢𦟌"], "肉眼": ["肉眼", "ribeye"]
+    "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"],
+    "金錢展": ["金展", "金錢展", "金錢𦟌", "牛展", "shin", "shank", "展"],
+    "肉眼": ["肉眼", "ribeye", "rib-eye"],
+    "西冷": ["西冷", "striploin", "sirloin"],
+    "牛柳": ["牛柳", "tenderloin", "fillet"],
+    "豬扒": ["豬扒", "pork chop"],
+    "梅肉": ["梅肉", "pork collar", "豬梅肉", "脢肉"],
+    "豬肋排": ["豬肋排", "肋排", "spare rib", "sparerib", "仔骨"],
+    "肥牛": ["肥牛", "胸腹", "pastrami", "plate", "short plate", "牛腩"]
 }
 
 loading_ph = st.empty()
@@ -167,7 +177,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v20.0 (形澧盲掃特權修復版)")
+    st.caption("版本號: v21.0 (AI 高階切詞配對版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -397,7 +407,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 
+# 📌 分頁二：日常搜尋
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -524,7 +534,6 @@ with tab2:
                                                             "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
                                                             "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
                                                         })
-                                # 💡 Tab 2 形澧專屬盲掃通道：使用正則分割文字行
                                 elif supplier == "形澧":
                                     text = page.extract_text()
                                     if text:
@@ -685,7 +694,7 @@ with tab3:
 
 
 # ----------------------------------------------------
-# 📌 分頁四：⚙️ 系統管理與防呆中心 
+# 📌 分頁四：⚙️ 系統管理與防呆中心
 # ----------------------------------------------------
 with tab4:
     st.header("⚙️ 系統管理與防呆中心")
@@ -757,17 +766,25 @@ with tab4:
                                         
                                     preview_price = f"${price_val} / LB"
                                     
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
+                                    # 💡 終極 AI 動態切詞計分演算法
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
                                         if opt == "請選擇對應產品...": continue
-                                        clean_opt = clean_string(opt)
-                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        opt_clean = clean_string(opt.split(']')[-1])
+                                        score = 0
+                                        
+                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
+                                        if not opt_words: opt_words = [opt_clean]
+                                        for w in opt_words:
+                                            if w in clean_raw: score += len(w) * 2
+                                                
+                                        for key, aliases in STATIC_DICT.items():
+                                            all_terms = [key] + aliases
+                                            if any(clean_string(t) in clean_raw for t in all_terms):
+                                                if any(clean_string(t) in opt_clean for t in all_terms):
+                                                    score += 10
+                                                    
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
@@ -779,7 +796,6 @@ with tab4:
                                         "✏️ 手動新價(LB)": price_val,
                                         "👀 系統試抓價錢": preview_price
                                     })
-                # 💡 Tab 4 形澧專屬掃描：文字逐行切割引擎
                 elif radar_sup == "形澧":
                     text = page.extract_text()
                     if text:
@@ -814,20 +830,30 @@ with tab4:
                                 
                                 if not is_mapped and not is_ignored:
                                     preview_price = f"${raw_price} / LB"
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
+                                    
+                                    # 💡 終極 AI 動態切詞計分演算法
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
                                         if opt == "請選擇對應產品...": continue
-                                        clean_opt = clean_string(opt)
-                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        opt_clean = clean_string(opt.split(']')[-1])
+                                        score = 0
+                                        
+                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
+                                        if not opt_words: opt_words = [opt_clean]
+                                        for w in opt_words:
+                                            if w in clean_raw: score += len(w) * 2
+                                                
+                                        for key, aliases in STATIC_DICT.items():
+                                            all_terms = [key] + aliases
+                                            if any(clean_string(t) in clean_raw for t in all_terms):
+                                                if any(clean_string(t) in opt_clean for t in all_terms):
+                                                    score += 10
+                                                    
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
+                                            
                                     unmapped_items.append({
                                         "✔️ 寫入 Mapping": False,
                                         "報價單原文": raw_name_text.strip(),
@@ -858,17 +884,25 @@ with tab4:
                                     price_val = price_lb if price_lb else 0.0
                                     preview_price = f"${price_val} / LB" if price_val else "無法辨識/斷貨"
 
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
+                                    # 💡 終極 AI 動態切詞計分演算法
                                     best_match = "請選擇對應產品..."
                                     max_score = 0
                                     for opt in all_db_options:
                                         if opt == "請選擇對應產品...": continue
-                                        clean_opt = clean_string(opt)
-                                        score = sum(1 for kw in expanded_keywords if kw in clean_opt)
+                                        opt_clean = clean_string(opt.split(']')[-1])
+                                        score = 0
+                                        
+                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
+                                        if not opt_words: opt_words = [opt_clean]
+                                        for w in opt_words:
+                                            if w in clean_raw: score += len(w) * 2
+                                                
+                                        for key, aliases in STATIC_DICT.items():
+                                            all_terms = [key] + aliases
+                                            if any(clean_string(t) in clean_raw for t in all_terms):
+                                                if any(clean_string(t) in opt_clean for t in all_terms):
+                                                    score += 10
+                                                    
                                         if score > max_score and score > 0:
                                             max_score = score
                                             best_match = opt
