@@ -176,7 +176,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v22.0 (浩新表格防呆切割版)")
+    st.caption("版本號: v22.1 (按鈕 Key 防衝突版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -331,11 +331,13 @@ with tab1:
             
             col_btn1, col_btn2, _ = st.columns([1, 1, 3])
             with col_btn1:
-                if st.button("☑️ 全部勾選 (寫入)"):
+                # 💡 加上唯一 key
+                if st.button("☑️ 全部勾選 (寫入)", key="t1_check"):
                     for item in st.session_state['preview_data']: item["✔️ 寫入"] = True
                     st.rerun()
             with col_btn2:
-                if st.button("☐ 全部取消勾選"):
+                # 💡 加上唯一 key
+                if st.button("☐ 全部取消勾選", key="t1_uncheck"):
                     for item in st.session_state['preview_data']: item["✔️ 寫入"] = False
                     st.rerun()
             
@@ -351,7 +353,8 @@ with tab1:
                 use_container_width=True, hide_index=True, height=500
             )
             
-            if st.button("💾 確認無誤，將『已勾選』資料寫入雲端母表", type="primary"):
+            # 💡 加上唯一 key
+            if st.button("💾 確認無誤，將『已勾選』資料寫入雲端母表", type="primary", key="t1_save"):
                 loading_ph3 = st.empty()
                 loading_ph3.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
                 
@@ -406,7 +409,7 @@ with tab1:
                     loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
 
 # ----------------------------------------------------
-# 📌 分頁二：日常搜尋 
+# 📌 分頁二：日常搜尋
 # ----------------------------------------------------
 with tab2:
     with st.form("search_form"):
@@ -516,7 +519,6 @@ with tab2:
                         
                         with pdfplumber.open(fh) as pdf:
                             for page in pdf.pages:
-                                # 💡 萬安 & 浩新 專屬盲掃通道：使用正則分割文字行
                                 if supplier in ["萬安(遠東)", "浩新"]:
                                     text = page.extract_text()
                                     if text:
@@ -741,7 +743,6 @@ with tab4:
         
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                # 💡 萬安 & 浩新 專屬文字逐行引擎，完美破解黏連表格
                 if radar_sup in ["萬安(遠東)", "浩新"]:
                     text = page.extract_text()
                     if text:
@@ -753,7 +754,6 @@ with tab4:
                                 price_str = match.group(2)
                                 unit_str = match.group(3) if match.group(3) else ""
                                 
-                                # 自動剔除浩新的重量干擾字眼
                                 raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?K[Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
                                 clean_raw = clean_string(raw_name_text)
                                 
@@ -950,11 +950,13 @@ with tab4:
         
         col_btn1, col_btn2, _ = st.columns([1, 1, 3])
         with col_btn1:
-            if st.button("☑️ 全部勾選 (準備寫入)"):
+            # 💡 防撞名：加入獨立 key
+            if st.button("☑️ 全部勾選 (準備寫入)", key="t4_check"):
                 for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = True
                 st.rerun()
         with col_btn2:
-            if st.button("☐ 全部取消勾選"):
+            # 💡 防撞名：加入獨立 key
+            if st.button("☐ 全部取消勾選", key="t4_uncheck"):
                 for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = False
                 st.rerun()
 
@@ -973,7 +975,8 @@ with tab4:
             use_container_width=True, hide_index=True, height=500
         )
         
-        if st.button("💾 將打勾的項目寫入 Mapping 並同步更新價錢", type="primary"):
+        # 💡 防撞名：加入獨立 key
+        if st.button("💾 將打勾的項目寫入 Mapping 並同步更新價錢", type="primary", key="t4_save"):
             loading_ph5 = st.empty()
             loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             
