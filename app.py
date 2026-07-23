@@ -176,7 +176,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v22.1 (按鈕 Key 防衝突版)")
+    st.caption("版本號: v23.0 (混合雙核掃描引擎版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -331,12 +331,10 @@ with tab1:
             
             col_btn1, col_btn2, _ = st.columns([1, 1, 3])
             with col_btn1:
-                # 💡 加上唯一 key
                 if st.button("☑️ 全部勾選 (寫入)", key="t1_check"):
                     for item in st.session_state['preview_data']: item["✔️ 寫入"] = True
                     st.rerun()
             with col_btn2:
-                # 💡 加上唯一 key
                 if st.button("☐ 全部取消勾選", key="t1_uncheck"):
                     for item in st.session_state['preview_data']: item["✔️ 寫入"] = False
                     st.rerun()
@@ -353,7 +351,6 @@ with tab1:
                 use_container_width=True, hide_index=True, height=500
             )
             
-            # 💡 加上唯一 key
             if st.button("💾 確認無誤，將『已勾選』資料寫入雲端母表", type="primary", key="t1_save"):
                 loading_ph3 = st.empty()
                 loading_ph3.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
@@ -464,11 +461,12 @@ with tab2:
                                 elif not is_sold_out_now:
                                     display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
                                     if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
-                                if display_price != "Sold out" or hist_alert:
-                                    compare_results.append({
-                                        "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
-                                        "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
-                                    })
+                                
+                                # 💡 終極修復：強制顯示所有產品，就算沒價錢也要列出來
+                                compare_results.append({
+                                    "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
+                                    "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
+                                })
             search_ph1.empty()
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
@@ -509,6 +507,20 @@ with tab2:
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
                     cloud_db = []
+                    
+                    def process_cloud_item(raw_name_text, price_str, unit_str, supplier, file_name):
+                        raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text).strip()
+                        raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
+                        clean_raw = clean_string(raw_name_text)
+                        if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): return
+                        if price_str == "清" or "sold" in str(price_str).lower(): return
+                        origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, unit_str)
+                        if price_lb:
+                            cloud_db.append({
+                                "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                "換算價 ($/LB)": price_lb, "來源檔案": file_name, "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                            })
+                    
                     for idx, file in enumerate(files_to_scan):
                         supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
                         request = drive_service.files().get_media(fileId=file['id'])
@@ -519,76 +531,62 @@ with tab2:
                         
                         with pdfplumber.open(fh) as pdf:
                             for page in pdf.pages:
-                                if supplier in ["萬安(遠東)", "浩新"]:
-                                    text = page.extract_text()
-                                    if text:
-                                        for line in text.split('\n'):
-                                            line = line.strip()
-                                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
-                                            for match in matches:
-                                                raw_name_text = match.group(1).strip()
-                                                price_str = match.group(2)
-                                                
-                                                raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?K[Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
-                                                raw_name_text = re.sub(r'[\$\s/]+$', '', raw_name_text).strip()
-                                                
-                                                if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
-                                                    if price_str == "清": continue
-                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, "")
-                                                    if price_lb and price_kg:
-                                                        cloud_db.append({
-                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
-                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
-                                                        })
-                                elif supplier == "形澧":
-                                    text = page.extract_text()
-                                    if text:
-                                        for line in text.split('\n'):
-                                            line = line.strip()
-                                            if len(line) < 5: continue
-                                            tokens = re.split(r'\s+|\|', line)
-                                            raw_price = 0.0
-                                            price_str_for_split = ""
-                                            for token in reversed(tokens):
-                                                token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                                                if token_clean:
-                                                    if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                                        nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                                        if nums:
-                                                            val = float(nums[0])
-                                                            if val > 0:
-                                                                if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                                                if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                                                raw_price = val
-                                                                price_str_for_split = token
-                                                                break
-                                            if raw_price > 0:
-                                                raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
-                                                raw_name_text = re.sub(r'[\s\|]+$', '', raw_name_text)
-                                                if len(clean_string(raw_name_text)) > 2 and re.search(r'[\u4e00-\u9fa5]', raw_name_text):
-                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, str(raw_price), "")
-                                                    if price_lb and price_kg:
-                                                        cloud_db.append({
-                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
-                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
-                                                        })
+                                lines = []
+                                text = page.extract_text()
+                                if text: lines.extend(text.split('\n'))
+                                tables = page.extract_tables()
+                                for table in tables:
+                                    for row in table:
+                                        row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
+                                        lines.append(row_str)
+                                
+                                if supplier == "形澧":
+                                    for line in lines:
+                                        line = line.strip()
+                                        if len(line) < 5: continue
+                                        tokens = re.split(r'\s+|\|', line)
+                                        raw_price = 0.0
+                                        price_str_for_split = ""
+                                        for token in reversed(tokens):
+                                            token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                                            if token_clean:
+                                                if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                                    nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                                    if nums:
+                                                        val = float(nums[0])
+                                                        if val > 0:
+                                                            if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                                            if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
+                                                            raw_price = val
+                                                            price_str_for_split = token
+                                                            break
+                                        if raw_price > 0:
+                                            raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
+                                            process_cloud_item(raw_name_text, str(raw_price), "", supplier, file['name'])
                                 else:
-                                    for table in page.extract_tables():
+                                    for line in lines:
+                                        matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                                        for match in matches:
+                                            process_cloud_item(match.group(1), match.group(2), match.group(3) if match.group(3) else "", supplier, file['name'])
+                                    for table in tables:
                                         for row in table:
                                             cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
                                             extracted_parts = parse_supplier_row(supplier, cells)
                                             for part in extracted_parts:
-                                                p_name, p_price_str, p_unit_str = part
+                                                p_name = part[0]
                                                 if "@@@" in p_name: p_name = p_name.split("@@@")[0]
-                                                if len(clean_string(p_name)) > 2: 
-                                                    origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(p_name, p_price_str, p_unit_str)
-                                                    if price_lb and price_kg:
-                                                        cloud_db.append({
-                                                            "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
-                                                            "換算價 ($/LB)": price_lb, "來源檔案": file['name'], "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
-                                                        })
+                                                process_cloud_item(p_name, part[1], part[2], supplier, file['name'])
                     search_ph2.empty()
-                    filtered_cloud = [item for item in cloud_db if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins)]
+                    
+                    filtered_cloud = []
+                    seen_cloud = set()
+                    for item in cloud_db:
+                        if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins):
+                            uid = f"{item['供應商']}_{item['品名(純)']}_{item['換算價 ($/LB)']}"
+                            if uid not in seen_cloud:
+                                seen_cloud.add(uid)
+                                filtered_cloud.append(item)
+                                
                     if filtered_cloud:
                         df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
                         cheapest_cloud = df_cloud.iloc[0]
@@ -683,7 +681,7 @@ with tab3:
                         is_cheapest = (price == current_min)
                         css_class = "bulk-price-tag bulk-cheapest" if is_cheapest else "bulk-price-tag"
                         star = "🏆 " if is_cheapest else ""
-                        current_tags_html += f"<span class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
+                        current_tags_html += fspan class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
                 else: current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
                 
                 conclusion_html = ""
@@ -737,211 +735,128 @@ with tab4:
         
         pdf_bytes = io.BytesIO(radar_file.read())
         unmapped_items = []
+        seen_names = set()
         
         existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
         ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
         
+        def process_inbox_item(raw_name_text, price_str, unit_str):
+            raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
+            raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
+            clean_raw = clean_string(raw_name_text)
+            
+            if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): return
+            if clean_raw in seen_names: return
+            seen_names.add(clean_raw)
+            
+            is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
+            is_ignored = any(ig in clean_raw for ig in ignored_items)
+            
+            if not is_mapped and not is_ignored:
+                if price_str == "清" or "sold" in str(price_str).lower():
+                    price_val = 0.0
+                    preview_price = "Sold out (清)"
+                else:
+                    try:
+                        price_val = float(price_str)
+                        if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
+                        price_val = round(price_val, 1)
+                    except:
+                        price_val = 0.0
+                    preview_price = f"${price_val} / LB"
+                
+                expanded_keywords = set([clean_raw])
+                for key, aliases in STATIC_DICT.items():
+                    if any(a in clean_raw for a in aliases):
+                        expanded_keywords.update(aliases)
+                        expanded_keywords.add(key)
+                
+                best_match = "請選擇對應產品..."
+                max_score = 0
+                for opt in all_db_options:
+                    if opt == "請選擇對應產品...": continue
+                    opt_clean = clean_string(opt.split(']')[-1])
+                    score = 0
+                    opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
+                    if not opt_words: opt_words = [opt_clean]
+                    for w in opt_words:
+                        if w in clean_raw: score += len(w) * 2
+                    for key, aliases in STATIC_DICT.items():
+                        all_terms = [key] + aliases
+                        if any(clean_string(t) in clean_raw for t in all_terms):
+                            if any(clean_string(t) in opt_clean for t in all_terms):
+                                score += 10
+                    if score > max_score and score > 0:
+                        max_score = score
+                        best_match = opt
+                        
+                unmapped_items.append({
+                    "✔️ 寫入 Mapping": False,
+                    "報價單原文": raw_name_text,
+                    "對應母表產品 (AI建議)": best_match,
+                    "✏️ 手動新價(LB)": price_val,
+                    "👀 系統試抓價錢": preview_price
+                })
+
         with pdfplumber.open(pdf_bytes) as pdf:
             for page in pdf.pages:
-                if radar_sup in ["萬安(遠東)", "浩新"]:
-                    text = page.extract_text()
-                    if text:
-                        for line in text.split('\n'):
-                            line = line.strip()
-                            matches = re.finditer(r'(.*?)\$\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
-                            for match in matches:
-                                raw_name_text = match.group(1).strip()
-                                price_str = match.group(2)
-                                unit_str = match.group(3) if match.group(3) else ""
-                                
-                                raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?K[Gg]?)\s*', '', raw_name_text, flags=re.IGNORECASE).strip()
-                                clean_raw = clean_string(raw_name_text)
-                                
-                                if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
-                                
-                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
-                                is_ignored = any(ig in clean_raw for ig in ignored_items)
-                                
-                                if not is_mapped and not is_ignored:
-                                    if price_str == "清":
-                                        price_val = 0.0
-                                        preview_price = "Sold out (清)"
-                                    else:
-                                        try:
-                                            price_val = float(price_str)
-                                            if "kg" in clean_string(unit_str): price_val = price_val / 2.2046
-                                            price_val = round(price_val, 1)
-                                        except:
-                                            price_val = 0.0
-                                        preview_price = f"${price_val} / LB"
-                                    
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
-                                    best_match = "請選擇對應產品..."
-                                    max_score = 0
-                                    for opt in all_db_options:
-                                        if opt == "請選擇對應產品...": continue
-                                        opt_clean = clean_string(opt.split(']')[-1])
-                                        score = 0
-                                        
-                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
-                                        if not opt_words: opt_words = [opt_clean]
-                                        for w in opt_words:
-                                            if w in clean_raw: score += len(w) * 2
-                                                
-                                        for key, aliases in STATIC_DICT.items():
-                                            all_terms = [key] + aliases
-                                            if any(clean_string(t) in clean_raw for t in all_terms):
-                                                if any(clean_string(t) in opt_clean for t in all_terms):
-                                                    score += 10
-                                                    
-                                        if score > max_score and score > 0:
-                                            max_score = score
-                                            best_match = opt
-                                            
-                                    unmapped_items.append({
-                                        "✔️ 寫入 Mapping": False,
-                                        "報價單原文": raw_name_text.strip(),
-                                        "對應母表產品 (AI建議)": best_match,
-                                        "✏️ 手動新價(LB)": price_val,
-                                        "👀 系統試抓價錢": preview_price
-                                    })
-                elif radar_sup == "形澧":
-                    text = page.extract_text()
-                    if text:
-                        for line in text.split('\n'):
-                            line = line.strip()
-                            if len(line) < 5: continue
-                            tokens = re.split(r'\s+|\|', line)
-                            raw_price = 0.0
-                            price_str_for_split = ""
-                            for token in reversed(tokens):
-                                token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
-                                if token_clean:
-                                    if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
-                                        nums = re.findall(r'\d+\.\d+|\d+', token_clean)
-                                        if nums:
-                                            val = float(nums[0])
-                                            if val > 0:
-                                                if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
-                                                if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
-                                                raw_price = val
-                                                price_str_for_split = token
-                                                break
-                            if raw_price > 0:
-                                raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
-                                raw_name_text = re.sub(r'[\s\|]+$', '', raw_name_text)
-                                clean_raw = clean_string(raw_name_text)
-                                
-                                if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue 
-                                
-                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
-                                is_ignored = any(ig in clean_raw for ig in ignored_items)
-                                
-                                if not is_mapped and not is_ignored:
-                                    preview_price = f"${raw_price} / LB"
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
-                                    best_match = "請選擇對應產品..."
-                                    max_score = 0
-                                    for opt in all_db_options:
-                                        if opt == "請選擇對應產品...": continue
-                                        opt_clean = clean_string(opt.split(']')[-1])
-                                        score = 0
-                                        
-                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
-                                        if not opt_words: opt_words = [opt_clean]
-                                        for w in opt_words:
-                                            if w in clean_raw: score += len(w) * 2
-                                                
-                                        for key, aliases in STATIC_DICT.items():
-                                            all_terms = [key] + aliases
-                                            if any(clean_string(t) in clean_raw for t in all_terms):
-                                                if any(clean_string(t) in opt_clean for t in all_terms):
-                                                    score += 10
-                                                    
-                                        if score > max_score and score > 0:
-                                            max_score = score
-                                            best_match = opt
-                                    unmapped_items.append({
-                                        "✔️ 寫入 Mapping": False,
-                                        "報價單原文": raw_name_text.strip(),
-                                        "對應母表產品 (AI建議)": best_match,
-                                        "✏️ 手動新價(LB)": raw_price,
-                                        "👀 系統試抓價錢": preview_price
-                                    })
+                lines = []
+                text = page.extract_text()
+                if text: lines.extend(text.split('\n'))
+                
+                tables = page.extract_tables()
+                for table in tables:
+                    for row in table:
+                        # 💡 終極解法：強制把表格拼湊成完整字串，防禦錯位的排版
+                        row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
+                        lines.append(row_str)
+                
+                if radar_sup == "形澧":
+                    for line in lines:
+                        line = line.strip()
+                        if len(line) < 5: continue
+                        tokens = re.split(r'\s+|\|', line)
+                        raw_price = 0.0
+                        price_str_for_split = ""
+                        for token in reversed(tokens):
+                            token_clean = re.sub(r'[^0-9\.a-zA-Z/]', '', token)
+                            if token_clean:
+                                if not re.search(r'[a-zA-Z]', token_clean.replace('/', '')) or re.search(r'\d+\.\d+', token_clean):
+                                    nums = re.findall(r'\d+\.\d+|\d+', token_clean)
+                                    if nums:
+                                        val = float(nums[0])
+                                        if val > 0:
+                                            if re.search(r'(kg|g|lb|lbs|oz)$', token_clean.lower()) and "/" not in token_clean: continue
+                                            if re.match(r'^P\d+$', token_clean, re.IGNORECASE): continue
+                                            raw_price = val
+                                            price_str_for_split = token
+                                            break
+                        if raw_price > 0:
+                            raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
+                            process_inbox_item(raw_name_text, str(raw_price), "")
                 else:
-                    for table in page.extract_tables():
+                    # 1. Regex 全面網羅法 (對付所有殘缺表格)
+                    for line in lines:
+                        matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                        for match in matches:
+                            process_inbox_item(match.group(1), match.group(2), match.group(3) if match.group(3) else "")
+                    
+                    # 2. X-Ray 深度解析法 (對付標準表格)
+                    for table in tables:
                         for row in table:
                             cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
                             extracted_parts = parse_supplier_row(radar_sup, cells)
                             for part in extracted_parts:
-                                raw_name_text = part[0]
-                                if "@@@" in raw_name_text: raw_name_text = raw_name_text.split("@@@")[0]
-                                clean_raw = clean_string(raw_name_text)
-                                
-                                if len(clean_raw) < 2: continue 
-                                
-                                is_mapped = any(em in clean_raw or clean_raw in em for em in existing_mappings)
-                                is_ignored = any(ig in clean_raw for ig in ignored_items)
-                                
-                                if not is_mapped and not is_ignored:
-                                    p_price_str = part[1]
-                                    p_unit_str = part[2]
-                                    _, _, _, _, _, price_lb, _ = deep_decode_item(raw_name_text, p_price_str, p_unit_str)
-                                    
-                                    price_val = price_lb if price_lb else 0.0
-                                    preview_price = f"${price_val} / LB" if price_val else "無法辨識/斷貨"
-
-                                    expanded_keywords = set([clean_raw])
-                                    for key, aliases in STATIC_DICT.items():
-                                        if any(a in clean_raw for a in aliases):
-                                            expanded_keywords.update(aliases)
-                                            expanded_keywords.add(key)
-                                    best_match = "請選擇對應產品..."
-                                    max_score = 0
-                                    for opt in all_db_options:
-                                        if opt == "請選擇對應產品...": continue
-                                        opt_clean = clean_string(opt.split(']')[-1])
-                                        score = 0
-                                        
-                                        opt_words = [clean_string(w) for w in opt.split(']')[-1].split() if len(clean_string(w)) > 0]
-                                        if not opt_words: opt_words = [opt_clean]
-                                        for w in opt_words:
-                                            if w in clean_raw: score += len(w) * 2
-                                                
-                                        for key, aliases in STATIC_DICT.items():
-                                            all_terms = [key] + aliases
-                                            if any(clean_string(t) in clean_raw for t in all_terms):
-                                                if any(clean_string(t) in opt_clean for t in all_terms):
-                                                    score += 10
-                                                    
-                                        if score > max_score and score > 0:
-                                            max_score = score
-                                            best_match = opt
-                                            
-                                    unmapped_items.append({
-                                        "✔️ 寫入 Mapping": False,
-                                        "報價單原文": raw_name_text.strip(),
-                                        "對應母表產品 (AI建議)": best_match,
-                                        "✏️ 手動新價(LB)": price_val,
-                                        "👀 系統試抓價錢": preview_price
-                                    })
+                                p_name = part[0]
+                                if "@@@" in p_name: p_name = p_name.split("@@@")[0]
+                                process_inbox_item(p_name, part[1], part[2])
         
         radar_ph.empty()
-        
         if not unmapped_items:
             st.success("🎉 太棒了！這份報價單裡的所有產品都已經被你 Mapping 或加入黑名單了，沒有任何遺漏！")
             st.session_state['inbox_data'] = None
         else:
-            unique_unmapped = {item["報價單原文"]: item for item in unmapped_items}.values()
-            st.session_state['inbox_data'] = list(unique_unmapped)
+            st.session_state['inbox_data'] = unmapped_items
             st.session_state['radar_sup'] = radar_sup
             
     if st.session_state.get('inbox_data'):
@@ -950,12 +865,10 @@ with tab4:
         
         col_btn1, col_btn2, _ = st.columns([1, 1, 3])
         with col_btn1:
-            # 💡 防撞名：加入獨立 key
             if st.button("☑️ 全部勾選 (準備寫入)", key="t4_check"):
                 for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = True
                 st.rerun()
         with col_btn2:
-            # 💡 防撞名：加入獨立 key
             if st.button("☐ 全部取消勾選", key="t4_uncheck"):
                 for item in st.session_state['inbox_data']: item["✔️ 寫入 Mapping"] = False
                 st.rerun()
@@ -975,7 +888,6 @@ with tab4:
             use_container_width=True, hide_index=True, height=500
         )
         
-        # 💡 防撞名：加入獨立 key
         if st.button("💾 將打勾的項目寫入 Mapping 並同步更新價錢", type="primary", key="t4_save"):
             loading_ph5 = st.empty()
             loading_ph5.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
