@@ -176,7 +176,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v23.0 (混合雙核掃描引擎版)")
+    st.caption("版本號: v23.1 (Bug 修復版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -462,7 +462,6 @@ with tab2:
                                     display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
                                     if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
                                 
-                                # 💡 終極修復：強制顯示所有產品，就算沒價錢也要列出來
                                 compare_results.append({
                                     "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
                                     "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
@@ -681,7 +680,7 @@ with tab3:
                         is_cheapest = (price == current_min)
                         css_class = "bulk-price-tag bulk-cheapest" if is_cheapest else "bulk-price-tag"
                         star = "🏆 " if is_cheapest else ""
-                        current_tags_html += fspan class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
+                        current_tags_html += f"<span class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
                 else: current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
                 
                 conclusion_html = ""
@@ -807,7 +806,6 @@ with tab4:
                 tables = page.extract_tables()
                 for table in tables:
                     for row in table:
-                        # 💡 終極解法：強制把表格拼湊成完整字串，防禦錯位的排版
                         row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
                         lines.append(row_str)
                 
@@ -835,13 +833,11 @@ with tab4:
                             raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
                             process_inbox_item(raw_name_text, str(raw_price), "")
                 else:
-                    # 1. Regex 全面網羅法 (對付所有殘缺表格)
                     for line in lines:
                         matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
                         for match in matches:
                             process_inbox_item(match.group(1), match.group(2), match.group(3) if match.group(3) else "")
                     
-                    # 2. X-Ray 深度解析法 (對付標準表格)
                     for table in tables:
                         for row in table:
                             cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
