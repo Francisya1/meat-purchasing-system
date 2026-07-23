@@ -119,7 +119,6 @@ def find_price_columns(vals, supplier):
         if lb_col != -1 or kg_col != -1: break
     return lb_col, kg_col
 
-# 💡 核心外掛：深度救援掃描器 (對付殘缺表格與重量干擾)
 def extract_robust_pool(pdf_bytes, supplier):
     robust_pool = {}
     with pdfplumber.open(pdf_bytes) as pdf:
@@ -149,20 +148,16 @@ def extract_robust_pool(pdf_bytes, supplier):
                 elif supplier == "形澧":
                     line = line.strip()
                     if len(line) < 5: continue
-                    # 消除重量與單位的空格干擾
                     line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
                     line = re.sub(r'\s*([*xX])\s*', r'\1', line)
                     tokens = re.split(r'\s+|\|', line)
                     raw_price = 0.0
                     price_str_for_split = ""
                     for token in reversed(tokens):
-                        # 保留純淨文字與數字
                         tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
                         if not tc: continue
                         if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
                         if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
-                        
-                        # 💡 終極防線：必須是純淨的數字或小數，絕不能含有英文字母
                         if re.match(r'^\d+(?:\.\d+)?$', tc):
                             val = float(tc)
                             if val > 0:
@@ -268,7 +263,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v25.0 (形澧純淨數字鎖定版)")
+    st.caption("版本號: v26.0 (價格錨點偵錯版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -359,7 +354,6 @@ with tab1:
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
                             
-                            # 💡 針對形澧的純淨文字解盲系統
                             if selected_supplier == "形澧":
                                 m_line = str(data.get('matched_line', '')).strip()
                                 if m_line and m_line != "-":
@@ -371,7 +365,6 @@ with tab1:
                                         if not tc: continue
                                         if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
                                         if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
-                                        # 必須是完美小數或整數
                                         if re.match(r'^\d+(?:\.\d+)?$', tc):
                                             val = float(tc)
                                             if val > 0:
@@ -562,8 +555,8 @@ with tab2:
                     if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                         for sup_name, cols in sup_cols.items():
                             lb_col_idx = cols["LB"]
-                            if lb_col_idx != -1:
-                                p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx != -2 and lb_col_idx < len(r) else ""
+                            if lb_col_idx != -2: # 只要有欄位，就算沒價錢也顯示
+                                p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx < len(r) else ""
                                 nums = re.findall(r'\d+\.?\d*', p_val_str)
                                 is_sold_out_now = "sold out" in p_val_str.lower() or not nums
                                 hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
@@ -813,9 +806,6 @@ with tab4:
     st.header("⚙️ 系統管理與防呆中心")
     st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
     
-    st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
-    st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來。確認無誤後，系統會幫你同步建立 Mapping 與寫入最新價錢！")
-    
     all_db_options = ["請選擇對應產品..."]
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
@@ -825,6 +815,9 @@ with tab4:
                 if not sku: continue
                 std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
                 all_db_options.append(f"[{sku}] {std_name}")
+
+    st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
+    st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來。確認無誤後，系統會幫你同步建立 Mapping 與寫入最新價錢！")
 
     with st.form("radar_form"):
         col_r1, col_r2, col_r3 = st.columns([1, 1, 2])
@@ -1017,6 +1010,151 @@ with tab4:
             else:
                 loading_ph5.empty()
                 st.warning("⚠️ 沒有勾選任何項目寫入，或母表中無價錢欄位可更新。")
+
+    # ==========================================
+    # 🎯 Phase 4: 價格錨點異常偵測 (全新功能)
+    # ==========================================
+    st.markdown("---")
+    st.markdown("### 🎯 Phase 4: 價格錨點異常偵測 (AI 自動糾錯)")
+    st.write("利用同行報價作為基準 (Anchor)，如果某供應商的價錢偏離同行平均超過 **15%**，系統將自動列出，讓你檢查是否因為 Mapping 錯綁了不同等級的產品（例如把 Prime 當成 Choice）。")
+    
+    if st.button("🔍 掃描全庫價格異常", use_container_width=True):
+        loading_ph6 = st.empty()
+        loading_ph6.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+        gc, sh, _ = get_google_connection()
+        try:
+            mapping_ws = sh.worksheet('Mapping')
+            mapping_data_raw = mapping_ws.get_all_records()
+        except:
+            mapping_data_raw = []
+            
+        map_lookup = {}
+        for r in mapping_data_raw:
+            sup = str(r.get('供應商','')).strip()
+            sku = str(r.get('對應SKU','')).strip()
+            raw = str(r.get('供應商原文','')).strip()
+            if sup and sku and raw:
+                map_lookup.setdefault((sup, sku), []).append(raw)
+                
+        anomalies = []
+        for sn, vals in cat_data.items():
+            if not vals: continue
+            sup_cols = {}
+            for sup_name in HEADER_MAP.keys():
+                lb_col, _ = find_price_columns(vals, sup_name)
+                sup_cols[sup_name] = lb_col - 1
+                
+            for r in vals[2:]:
+                if not r: continue
+                sku = str(r[0]).strip()
+                std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
+                
+                prices = {}
+                for sup, col_idx in sup_cols.items():
+                    if col_idx != -2 and col_idx < len(r):
+                        p_str = str(r[col_idx]).strip()
+                        nums = re.findall(r'\d+\.?\d*', p_str)
+                        if nums and float(nums[0]) > 0 and "sold out" not in p_str.lower():
+                            prices[sup] = float(nums[0])
+                            
+                if len(prices) >= 2:
+                    avg_p = sum(prices.values()) / len(prices)
+                    for sup, p in prices.items():
+                        diff_pct = (p - avg_p) / avg_p
+                        if abs(diff_pct) >= 0.15: # 💡 15% 觸發警告閥值
+                            status = f"🔴 貴 {diff_pct*100:.1f}%" if diff_pct > 0 else f"🔵 平 {abs(diff_pct)*100:.1f}%"
+                            raw_names = map_lookup.get((sup, sku), ["未知(未綁定或手動填入)"])
+                            for raw in raw_names:
+                                anomalies.append({
+                                    "✔️ 修正": False,
+                                    "供應商": sup,
+                                    "報價單原文": raw,
+                                    "原綁定 SKU": f"[{sku}] {std_name}",
+                                    "該行平均價": avg_p,
+                                    "異常價錢": p,
+                                    "系統判定": status,
+                                    "🔄 重新綁定至 (新SKU)": "請選擇對應產品...",
+                                    "old_sku": sku
+                                })
+                                
+        loading_ph6.empty()
+        if anomalies:
+            st.session_state['anomaly_data'] = sorted(anomalies, key=lambda x: abs(float(x['異常價錢']) - float(x['該行平均價'])), reverse=True)
+        else:
+            st.success("✅ 掃描完成！全庫沒有發現偏離超過 15% 的異常價錢，目前的 Mapping 應該相當準確！")
+            st.session_state['anomaly_data'] = None
+
+    if st.session_state.get('anomaly_data'):
+        st.warning(f"⚠️ 發現 {len(st.session_state['anomaly_data'])} 筆潛在的錯綁紀錄！請在右側下拉選單選擇正確的 SKU，然後打勾寫入。")
+        df_anom = pd.DataFrame(st.session_state['anomaly_data'])
+        
+        # 格式化顯示價格
+        df_anom["該行平均價"] = df_anom["該行平均價"].apply(lambda x: f"${x:.1f}")
+        df_anom["異常價錢"] = df_anom["異常價錢"].apply(lambda x: f"${x:.1f}")
+        
+        display_cols = ["✔️ 修正", "供應商", "報價單原文", "原綁定 SKU", "該行平均價", "異常價錢", "系統判定", "🔄 重新綁定至 (新SKU)"]
+        
+        edited_anom = st.data_editor(
+            df_anom[display_cols],
+            column_config={
+                "✔️ 修正": st.column_config.CheckboxColumn("✔️ 修正"),
+                "供應商": st.column_config.TextColumn(disabled=True),
+                "報價單原文": st.column_config.TextColumn(disabled=True),
+                "原綁定 SKU": st.column_config.TextColumn(disabled=True),
+                "該行平均價": st.column_config.TextColumn(disabled=True),
+                "異常價錢": st.column_config.TextColumn(disabled=True),
+                "系統判定": st.column_config.TextColumn(disabled=True),
+                "🔄 重新綁定至 (新SKU)": st.column_config.SelectboxColumn("🔄 重新綁定至 (新SKU)", options=all_db_options)
+            },
+            use_container_width=True, hide_index=True, height=400
+        )
+        
+        if st.button("💾 執行 Mapping 修正 (覆蓋舊紀錄)", type="primary", key="fix_anom"):
+            loading_ph7 = st.empty()
+            loading_ph7.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            gc, sh, _ = get_google_connection()
+            mapping_ws = sh.worksheet('Mapping')
+            
+            cells_to_update = []
+            fix_count = 0
+            
+            # 找到需要更新的儲存格座標
+            all_maps = mapping_ws.get_all_values()
+            
+            for idx, row in edited_anom.iterrows():
+                if row["✔️ 修正"]:
+                    sup = row["供應商"]
+                    raw_name = row["報價單原文"]
+                    new_sku_full = row["🔄 重新綁定至 (新SKU)"]
+                    
+                    if "請選擇" in new_sku_full:
+                        st.error(f"❌ 請為 `{raw_name}` 選擇一個新的 SKU！")
+                        loading_ph7.empty()
+                        st.stop()
+                        
+                    match = re.search(r'\[(.*?)\]', new_sku_full)
+                    if match:
+                        pure_sku = match.group(1)
+                        # 尋找 Google Sheet 裡的對應列 (1-based index)
+                        for r_i, m_row in enumerate(all_maps):
+                            if r_i == 0: continue # 跳過表頭
+                            if len(m_row) >= 3 and m_row[0].strip() == sup and m_row[1].strip() == raw_name:
+                                cell_a1 = gspread.utils.rowcol_to_a1(r_i + 1, 3) # C欄是對應SKU
+                                cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
+                                fix_count += 1
+            
+            if cells_to_update:
+                mapping_ws.batch_update(cells_to_update)
+                fetch_all_google_data.clear()
+                loading_ph7.empty()
+                st.balloons()
+                st.success(f"🎉 成功修正了 {fix_count} 筆 Mapping 紀錄！(舊母表上的錯誤價錢，將在下次你上傳該供應商報價單時自動覆蓋校正)")
+                st.session_state['anomaly_data'] = None
+                time.sleep(2.5)
+                st.rerun()
+            else:
+                loading_ph7.empty()
+                st.warning("⚠️ 沒有勾選任何修正項目。")
 
     st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
