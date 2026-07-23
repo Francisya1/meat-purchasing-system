@@ -94,7 +94,34 @@ def get_wavy_loading_html():
     spans = "".join([f"<span style='animation-delay: {i*0.1}s'>{c}</span>" for i, c in enumerate(chars)])
     return f"<div class='wave-text'>{spans}</div>"
 
-# 💡 核心外掛：深度救援掃描器 (對付殘缺表格)
+# ==========================================
+# 💡 核心引擎：智慧表頭尋找器 (無懼格式差異)
+# ==========================================
+def find_price_columns(vals, supplier):
+    lb_col, kg_col = -1, -1
+    sup_clean = clean_string(supplier)
+    h_lb = clean_string(HEADER_MAP.get(supplier, {}).get("LB", ""))
+    h_kg = clean_string(HEADER_MAP.get(supplier, {}).get("KG", ""))
+    
+    for r_idx in range(min(5, len(vals))):
+        if not vals[r_idx]: continue
+        for c_idx, cv in enumerate(vals[r_idx]):
+            c_str = clean_string(str(cv))
+            if not c_str: continue
+            
+            if h_lb and h_lb == c_str: lb_col = c_idx + 1
+            elif h_kg and h_kg == c_str: kg_col = c_idx + 1
+            elif h_lb and h_lb in c_str and lb_col == -1: lb_col = c_idx + 1
+            elif h_kg and h_kg in c_str and kg_col == -1: kg_col = c_idx + 1
+            elif sup_clean in c_str:
+                if "kg" in c_str: kg_col = c_idx + 1
+                elif "lb" in c_str or "磅" in c_str: lb_col = c_idx + 1
+                else:
+                    if lb_col == -1: lb_col = c_idx + 1
+                    elif kg_col == -1: kg_col = c_idx + 1
+        if lb_col != -1 or kg_col != -1: break
+    return lb_col, kg_col
+
 def extract_robust_pool(pdf_bytes, supplier):
     robust_pool = {}
     with pdfplumber.open(pdf_bytes) as pdf:
@@ -239,7 +266,7 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v24.0 (深度搜救與解盲版)")
+    st.caption("版本號: v25.0 (智慧表頭追蹤引擎版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
@@ -282,7 +309,7 @@ with tab1:
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
                 
-                # 💡 外掛：深度救援掃描器 (挽救浩新等斷片產品)
+                # 深度救援掃描器
                 pdf_bytes.seek(0)
                 robust_pool = extract_robust_pool(pdf_bytes, selected_supplier)
                 sku_to_raw = {t['sku']: t['name'] for t in targets}
@@ -310,13 +337,9 @@ with tab1:
                 all_preview = []
                 for sheet_name, all_vals in cat_data.items():
                     if not all_vals: continue
-                    lb_col, kg_col = -1, -1
-                    for r_idx in range(min(10, len(all_vals))):
-                        for c_idx, cv in enumerate(all_vals[r_idx]):
-                            c_str = clean_string(str(cv))
-                            if clean_string(HEADER_MAP.get(selected_supplier, {}).get("LB", f"{selected_supplier}$/LB")) in c_str: lb_col = c_idx + 1
-                            if clean_string(HEADER_MAP.get(selected_supplier, {}).get("KG", f"{selected_supplier}$/KG")) in c_str: kg_col = c_idx + 1
-                        if lb_col != -1 or kg_col != -1: break
+                    
+                    # 💡 導入智慧表頭追蹤引擎
+                    lb_col, kg_col = find_price_columns(all_vals, selected_supplier)
 
                     for row_idx, r in enumerate(all_vals):
                         if row_idx < 2 or not r: continue
@@ -365,9 +388,12 @@ with tab1:
                                 if "🚨" in status: sort_key = 1
                                 elif "➖" in status: sort_key = 4
                                 else: sort_key = 3
+                                
+                                # 防呆警告：如果成功掃到產品，但母表沒欄位寫入
+                                if lb_col == -1: status = "⚠️ 母表無價錢欄位"
 
                             all_preview.append({
-                                "✔️ 寫入": not is_anomaly and not is_sold_out_detected,
+                                "✔️ 寫入": not is_anomaly and not is_sold_out_detected and lb_col != -1,
                                 "🛑 斷貨": is_sold_out_detected,
                                 "SKU": sku_db, "產品原文": data['raw_name'],
                                 "舊價(LB)": f"${old_price_lb}" if old_price_lb else "空",
@@ -394,6 +420,8 @@ with tab1:
         df_preview = pd.DataFrame(st.session_state['preview_data'])
         if len(df_preview) > 0:
             st.success(f"🎉 **成功分析 {len(df_preview)} 個產品！**")
+            if any(r["lb_col"] == -1 for r in st.session_state['preview_data']):
+                st.error("⚠️ 警告：系統在某些母表分頁中找不到此供應商的『價錢欄位』！請確認母表第一行的表頭名稱是否正確。")
             
             col_btn1, col_btn2, _ = st.columns([1, 1, 3])
             with col_btn1:
@@ -433,7 +461,7 @@ with tab1:
                 update_count = 0
                 
                 for idx, row in edited_df.iterrows():
-                    if not row["✔️ 寫入"]: continue
+                    if not row["✔️ 寫入"] or row["lb_col"] == -1: continue
                     update_count += 1
                     sn = row["sheet_name"]
                     if sn not in updates_by_sheet: updates_by_sheet[sn] = []; formats_by_sheet[sn] = []
@@ -469,7 +497,7 @@ with tab1:
                     time.sleep(1.5)
                     st.rerun()
                 else:
-                    loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料寫入。")
+                    loading_ph3.empty(); st.warning("⚠️ 沒有勾選任何資料，或母表無對應欄位可寫入。")
 
 # ----------------------------------------------------
 # 📌 分頁二：日常搜尋
@@ -500,12 +528,13 @@ with tab2:
             for sn, all_vals in cat_data.items():
                 if category_filter != "全部" and category_filter.split(" ")[0] != sn: continue
                 if not all_vals: continue
-                sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
-                for r_idx in range(min(10, len(all_vals))):
-                    for c_idx, cv in enumerate(all_vals[r_idx]):
-                        c_str = clean_string(str(cv))
-                        for sup_name, sup_headers in HEADER_MAP.items():
-                            if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
+                
+                # 💡 導入智慧表頭追蹤引擎
+                sup_cols = {}
+                for sup_name in HEADER_MAP.keys():
+                    lb_col, _ = find_price_columns(all_vals, sup_name)
+                    sup_cols[sup_name] = {"LB": lb_col - 1} # 轉換為 index
+
                 for row_idx, r in enumerate(all_vals[2:]):
                     if not r: continue
                     sku = str(r[0]).strip()
@@ -517,22 +546,22 @@ with tab2:
                     if any(alias in clean_sku or alias in clean_std for alias in search_aliases):
                         for sup_name, cols in sup_cols.items():
                             lb_col_idx = cols["LB"]
-                            # 💡 終極解盲：取消列長度限制，強制顯示所有命中產品
-                            if lb_col_idx != -1:
-                                p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx < len(r) else ""
-                                nums = re.findall(r'\d+\.?\d*', p_val_str)
-                                is_sold_out_now = "sold out" in p_val_str.lower() or not nums
-                                hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
-                                valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
-                                if is_sold_out_now and len(valid_past_prices) > 0: hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
-                                elif not is_sold_out_now:
-                                    display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
-                                    if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
-                                
-                                compare_results.append({
-                                    "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
-                                    "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
-                                })
+                            
+                            # 💡 終極解盲：就算找不到價錢欄位，或價錢空白，也強制列出！
+                            p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx != -2 and lb_col_idx < len(r) else ""
+                            nums = re.findall(r'\d+\.?\d*', p_val_str)
+                            is_sold_out_now = "sold out" in p_val_str.lower() or not nums
+                            hist_alert = ""; price_lb_numeric = 99999.9; display_price = "Sold out"
+                            valid_past_prices = [x['price'] for x in parsed_history if x['sku'] == sku and x['price'] > 0]
+                            if is_sold_out_now and len(valid_past_prices) > 0: hist_alert = "🔥 曾經熱賣，現已斷貨！(上次報價有售)"
+                            elif not is_sold_out_now:
+                                display_price = round(float(nums[0]), 1); price_lb_numeric = display_price
+                                if valid_past_prices and display_price <= min(valid_past_prices): hist_alert = "🔥🔥 歷史低位"
+                            
+                            compare_results.append({
+                                "SKU": sku, "產地": origin, "標準品名": std_name, "供應商": sup_name,
+                                "每磅均價 ($/LB)": display_price, "sort_price": price_lb_numeric, "歷史低價提醒": hist_alert
+                            })
             search_ph1.empty()
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
@@ -686,11 +715,12 @@ with tab3:
         bulk_matches = []
         for sn, all_vals in cat_data.items():
             if not all_vals: continue
-            sup_cols = {sup: {"LB": -1} for sup in HEADER_MAP}
-            for c_idx, cv in enumerate(all_vals[1]):
-                c_str = clean_string(str(cv))
-                for sup_name, sup_headers in HEADER_MAP.items():
-                    if clean_string(sup_headers["LB"]) == c_str: sup_cols[sup_name]["LB"] = c_idx
+            
+            # 💡 導入智慧表頭追蹤引擎
+            sup_cols = {}
+            for sup_name in HEADER_MAP.keys():
+                lb_col, _ = find_price_columns(all_vals, sup_name)
+                sup_cols[sup_name] = {"LB": lb_col - 1}
 
             for row in all_vals[2:]:
                 if not row: continue
@@ -702,8 +732,8 @@ with tab3:
                     current_prices = {}
                     for sup_name, cols in sup_cols.items():
                         lb_col = cols["LB"]
-                        if lb_col != -1:
-                            val_str = str(row[lb_col]).strip() if lb_col < len(row) else ""
+                        if lb_col != -2 and lb_col < len(row):
+                            val_str = str(row[lb_col]).strip()
                             nums = re.findall(r'\d+\.?\d*', val_str)
                             if nums and float(nums[0]) > 0 and "sold out" not in val_str.lower():
                                 current_prices[sup_name] = round(float(nums[0]), 1)
@@ -941,14 +971,8 @@ with tab4:
                                 if target_sn: break
                                 
                             if target_sn:
-                                lb_col, kg_col = -1, -1
-                                for r_idx in range(min(10, len(cat_data[target_sn]))):
-                                    for c_idx, cv in enumerate(cat_data[target_sn][r_idx]):
-                                        c_str = clean_string(str(cv))
-                                        sup_headers = HEADER_MAP.get(st.session_state['radar_sup'], {})
-                                        if clean_string(sup_headers.get("LB", "")) in c_str: lb_col = c_idx + 1
-                                        if clean_string(sup_headers.get("KG", "")) in c_str: kg_col = c_idx + 1
-                                    if lb_col != -1 or kg_col != -1: break
+                                # 💡 導入智慧表頭追蹤引擎
+                                lb_col, kg_col = find_price_columns(cat_data[target_sn], st.session_state['radar_sup'])
                                 
                                 bg_color = color(1.0, 0.95, 0.6) 
                                 fmt = cellFormat(backgroundColor=bg_color)
@@ -980,7 +1004,7 @@ with tab4:
                 st.rerun()
             else:
                 loading_ph5.empty()
-                st.warning("⚠️ 沒有勾選任何項目寫入。")
+                st.warning("⚠️ 沒有勾選任何項目寫入，或母表中無價錢欄位可更新。")
 
     st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
