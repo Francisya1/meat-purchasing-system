@@ -10,7 +10,6 @@ st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="w
 
 # ==========================================
 # 🗄️ 全域系統抽屜 (Session State) 初始化
-# 確保模組化後，所有 Tab 都能找到對應的變數
 # ==========================================
 if 'login_success' not in st.session_state: st.session_state['login_success'] = False
 if 'username' not in st.session_state: st.session_state['username'] = "User"
@@ -24,7 +23,7 @@ if 'radar_date_str' not in st.session_state: st.session_state['radar_date_str'] 
 if 'anomaly_data' not in st.session_state: st.session_state['anomaly_data'] = None
 
 # ==========================================
-# 🍪 嘗試匯入 Cookie 管理器 (包含異步緩衝機制)
+# 🍪 嘗試匯入 Cookie 管理器 (包含異步緩衝與防呆機制)
 # ==========================================
 try:
     from streamlit_cookies_controller import CookieController
@@ -34,7 +33,6 @@ except ImportError:
     has_cookie_lib = False
     cookie_controller = None
 
-# 💡 終極防呆：給前端 0.3 秒的時間把 Cookie 傳遞給 Python 後台
 if has_cookie_lib and 'cookie_fetched' not in st.session_state:
     time.sleep(0.3)
     st.session_state['cookie_fetched'] = True
@@ -124,18 +122,24 @@ def get_wavy_loading_html():
     return f"<div class='wave-text'>{spans}</div>"
 
 # ==========================================
-# 🔑 智慧登入系統 (支援 Cookie)
+# 🔑 智慧登入系統 (支援 Cookie 絕對防禦)
 # ==========================================
 def check_password():
     if st.session_state.get("login_success"):
         return True
 
+    # 💡 使用 getAll() 和 type check 進行防呆
     if has_cookie_lib:
-        auth_cookie = cookie_controller.get('meat_app_auth')
-        if auth_cookie == "Meat2026_Logged_In":
-            st.session_state["login_success"] = True
-            st.session_state["username"] = cookie_controller.get('meat_app_user') or "User"
-            return True
+        try:
+            all_cookies = cookie_controller.getAll()
+            if isinstance(all_cookies, dict):
+                auth_cookie = all_cookies.get('meat_app_auth')
+                if auth_cookie == "Meat2026_Logged_In":
+                    st.session_state["login_success"] = True
+                    st.session_state["username"] = all_cookies.get('meat_app_user', "User")
+                    return True
+        except Exception:
+            pass # 若前端尚未回傳資料，安全略過不報錯
 
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -162,8 +166,11 @@ def check_password():
                     st.session_state["username"] = username.strip()
                     
                     if remember_me and has_cookie_lib:
-                        cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400)
-                        cookie_controller.set('meat_app_user', username.strip(), max_age=30*86400)
+                        try:
+                            cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400)
+                            cookie_controller.set('meat_app_user', username.strip(), max_age=30*86400)
+                        except Exception:
+                            pass # 安全寫入
                         
                     st.rerun()
                 else: 
@@ -241,12 +248,14 @@ with st.sidebar:
             
     st.markdown("---")
     if has_cookie_lib and st.button("🚪 登出系統", use_container_width=True):
-        cookie_controller.remove('meat_app_auth')
-        cookie_controller.remove('meat_app_user')
+        try:
+            cookie_controller.remove('meat_app_auth')
+            cookie_controller.remove('meat_app_user')
+        except: pass
         st.session_state.clear()
         st.rerun()
         
-    st.caption("版本號: v28.1 (全域初始化 & Cookie 穩定版)")
+    st.caption("版本號: v28.2 (Cookie 防呆修正版)")
 
 # ==========================================
 # 🚀 路由分發 (載入各個分頁模組)
