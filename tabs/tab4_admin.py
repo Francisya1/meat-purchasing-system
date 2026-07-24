@@ -46,8 +46,9 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         pdf_bytes = io.BytesIO(radar_file.read())
         robust_pool = extract_robust_pool(pdf_bytes, radar_sup)
         
-        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
-        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
+        # 💡 修復: 確保字典長度大於1，防止被空白字串誤導
+        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, []) if len(clean_string(m['name'])) > 1]
+        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, []) if len(clean_string(ig)) > 1]
         
         unmapped_items = []
         for c_raw, r_data in robust_pool.items():
@@ -143,8 +144,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             map_ws = sh.worksheet('Mapping')
             
             map_adds = []
-            
-            # 💡 修復 Phase 4: 加入 formats_by_sheet 確保成功上色與寫入
             updates_by_sheet = {}
             formats_by_sheet = {}
             history_records = []
@@ -187,7 +186,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                 
                             if target_sn:
                                 lb_col, kg_col = find_price_columns(cat_data[target_sn], st.session_state['radar_sup'], HEADER_MAP)
-                                
                                 bg_color = color(1.0, 0.95, 0.6) 
                                 fmt = cellFormat(backgroundColor=bg_color)
                                 
@@ -204,14 +202,12 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             
             if map_adds: 
                 map_ws.append_rows(map_adds)
-                
             if updates_by_sheet:
                 for sn in updates_by_sheet:
                     target_ws = sh.worksheet(sn)
                     target_ws.batch_update(updates_by_sheet[sn])
                     if sn in formats_by_sheet and formats_by_sheet[sn]:
                         format_cell_ranges(target_ws, formats_by_sheet[sn])
-                        
             if history_records:
                 sh.worksheet('History_Log').append_rows(history_records)
                 
@@ -219,7 +215,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                 fetch_all_google_data.clear()
                 loading_ph5.empty()
                 st.balloons()
-                st.success(f"🎉 成功新增了 {len(map_adds)} 筆 Mapping，且已同步寫入價錢至母表！")
+                st.success(f"🎉 成功新增了 {len(map_adds)} 筆 Mapping！")
                 st.session_state['inbox_data'] = None
                 time.sleep(2)
                 st.rerun()
@@ -229,7 +225,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
 
     st.markdown("---")
     st.markdown("### 🎯 Phase 4: 價格錨點異常偵測 (AI 自動糾錯)")
-    st.write("利用同行報價作為基準 (Anchor)，如果某供應商的價錢偏離同行平均超過 **15%**，系統將自動列出，讓你檢查是否因為 Mapping 錯綁了不同等級的產品。")
+    st.write("利用同行報價作為基準，如果某供應商的價錢偏離同行平均超過 **15%**，系統將自動列出，讓你檢查是否因為錯綁了不同等級的產品。你可以選擇 **修正 (覆蓋)** 或直接 **刪除該 Mapping**。")
     
     if st.button("🔍 掃描全庫價格異常", use_container_width=True):
         loading_ph6 = st.empty()
@@ -279,6 +275,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                             raw_names = map_lookup.get((sup, sku), ["未知(未綁定或手動填入)"])
                             for raw in raw_names:
                                 anomalies.append({
+                                    "🗑️ 刪除此 Mapping": False,
                                     "✔️ 修正": False,
                                     "供應商": sup,
                                     "報價單原文": raw,
@@ -286,8 +283,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                     "該行平均價": avg_p,
                                     "異常價錢": p,
                                     "系統判定": status,
-                                    "🔄 重新綁定至 (新SKU)": "請選擇對應產品...",
-                                    "old_sku": sku
+                                    "🔄 重新綁定至 (新SKU)": "請選擇對應產品..."
                                 })
                                 
         loading_ph6.empty()
@@ -301,11 +297,12 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         df_anom = pd.DataFrame(st.session_state['anomaly_data'])
         df_anom["該行平均價"] = df_anom["該行平均價"].apply(lambda x: f"${x:.1f}")
         df_anom["異常價錢"] = df_anom["異常價錢"].apply(lambda x: f"${x:.1f}")
-        display_cols = ["✔️ 修正", "供應商", "報價單原文", "原綁定 SKU", "該行平均價", "異常價錢", "系統判定", "🔄 重新綁定至 (新SKU)"]
+        display_cols = ["🗑️ 刪除此 Mapping", "✔️ 修正", "供應商", "報價單原文", "原綁定 SKU", "該行平均價", "異常價錢", "系統判定", "🔄 重新綁定至 (新SKU)"]
         
         edited_anom = st.data_editor(
             df_anom[display_cols],
             column_config={
+                "🗑️ 刪除此 Mapping": st.column_config.CheckboxColumn("🗑️ 刪除此 Mapping", help="勾選後將直接從資料庫移除此紀錄"),
                 "✔️ 修正": st.column_config.CheckboxColumn("✔️ 修正"),
                 "供應商": st.column_config.TextColumn(disabled=True),
                 "報價單原文": st.column_config.TextColumn(disabled=True),
@@ -318,45 +315,54 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             use_container_width=True, hide_index=True, height=400
         )
         
-        if st.button("💾 執行 Mapping 修正 (覆蓋舊紀錄)", type="primary", key="fix_anom"):
+        if st.button("💾 執行操作 (刪除 或 修正)", type="primary", key="fix_anom"):
             loading_ph7 = st.empty()
             loading_ph7.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             gc, sh, _ = get_google_connection()
             mapping_ws = sh.worksheet('Mapping')
             
             cells_to_update = []
-            fix_count = 0
+            rows_to_delete = []
             all_maps = mapping_ws.get_all_values()
             
             for idx, row in edited_anom.iterrows():
-                if row["✔️ 修正"]:
+                if row["🗑️ 刪除此 Mapping"] or row["✔️ 修正"]:
                     sup = row["供應商"]
                     raw_name = row["報價單原文"]
-                    new_sku_full = row["🔄 重新綁定至 (新SKU)"]
-                    if "請選擇" in new_sku_full: continue
-                        
-                    match = re.search(r'\[(.*?)\]', new_sku_full)
-                    if match:
-                        pure_sku = match.group(1)
-                        for r_i, m_row in enumerate(all_maps):
-                            if r_i == 0: continue
-                            if len(m_row) >= 3 and m_row[0].strip() == sup and m_row[1].strip() == raw_name:
-                                cell_a1 = gspread.utils.rowcol_to_a1(r_i + 1, 3)
-                                cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
-                                fix_count += 1
-            
+                    
+                    for r_i, m_row in enumerate(all_maps):
+                        if r_i == 0: continue
+                        if len(m_row) >= 3 and m_row[0].strip() == sup and m_row[1].strip() == raw_name:
+                            target_row = r_i + 1
+                            if row["🗑️ 刪除此 Mapping"]:
+                                rows_to_delete.append(target_row)
+                            else:
+                                new_sku_full = row["🔄 重新綁定至 (新SKU)"]
+                                if "請選擇" not in new_sku_full:
+                                    match = re.search(r'\[(.*?)\]', new_sku_full)
+                                    if match:
+                                        pure_sku = match.group(1)
+                                        cell_a1 = gspread.utils.rowcol_to_a1(target_row, 3)
+                                        cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
+
+            # 💡 由下往上刪除，避免行數改變導致刪錯資料
+            for r in sorted(list(set(rows_to_delete)), reverse=True):
+                mapping_ws.delete_rows(r)
+                
             if cells_to_update:
                 mapping_ws.batch_update(cells_to_update)
+                
+            if rows_to_delete or cells_to_update:
                 fetch_all_google_data.clear()
                 loading_ph7.empty()
                 st.balloons()
-                st.success(f"🎉 成功修正了 {fix_count} 筆 Mapping！(請重新上傳一次該供應商報價單來覆蓋錯誤價錢)")
+                st.success(f"🎉 成功刪除 {len(rows_to_delete)} 筆 / 修正 {len(cells_to_update)} 筆紀錄！")
                 st.session_state['anomaly_data'] = None
                 time.sleep(2.5)
                 st.rerun()
             else:
                 loading_ph7.empty()
-                st.warning("⚠️ 沒有勾選任何修正項目。")
+                st.warning("⚠️ 沒有勾選任何操作項目。")
 
     st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
@@ -385,27 +391,68 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             sku = str(row.get('對應SKU', '')).strip()
             
             if not sup or not raw_name or not sku:
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "❌ 欄位空白", "建議": "請補齊遺漏的欄位"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "❌ 欄位空白"})
                 continue
             if sku not in valid_skus:
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "👻 幽靈 SKU", "建議": "四大母表中找不到此 SKU"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "👻 幽靈 SKU"})
             
             name_clean = raw_name.lower()
             if sku.startswith('1') and any(x in name_clean for x in ['豬', 'pork', '雞', 'chicken', '羊', 'lamp', 'lamb']):
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為牛)"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為牛)"})
             elif sku.startswith('2') and any(x in name_clean for x in ['牛', 'beef', '雞', 'chicken', '羊', 'lamp', 'lamb']):
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為豬)"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為豬)"})
             elif sku.startswith('3') and any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '羊', 'lamp', 'lamb']):
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為雞)"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為雞)"})
             elif sku.startswith('4') and any(x in name_clean for x in ['牛', 'beef', '豬', 'pork', '雞', 'chicken']):
-                errors.append({"行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為羊)"})
+                errors.append({"🗑️ 刪除此行": False, "行數": excel_row, "供應商": sup, "產品原文": raw_name, "SKU": sku, "錯誤類型": "🚨 類別衝突 (應為羊)"})
         
         loading_ph4.empty()
         if errors:
-            st.warning(f"⚠️ 體檢完成！發現 **{len(errors)}** 個問題。請回 Google Excel 修正。")
-            st.dataframe(pd.DataFrame(errors), use_container_width=True, hide_index=True)
+            st.warning(f"⚠️ 體檢完成！發現 **{len(errors)}** 個問題。你可以勾選直接刪除，或回 Google Excel 手動修正。")
+            st.session_state['health_errors'] = errors
         else:
             st.balloons(); st.success("✅ 體檢完美通過！")
+            st.session_state['health_errors'] = None
+
+    if st.session_state.get('health_errors'):
+        df_err = pd.DataFrame(st.session_state['health_errors'])
+        edited_err = st.data_editor(
+            df_err,
+            column_config={
+                "🗑️ 刪除此行": st.column_config.CheckboxColumn("🗑️ 刪除此行"),
+                "行數": st.column_config.NumberColumn(disabled=True),
+                "供應商": st.column_config.TextColumn(disabled=True),
+                "產品原文": st.column_config.TextColumn(disabled=True),
+                "SKU": st.column_config.TextColumn(disabled=True),
+                "錯誤類型": st.column_config.TextColumn(disabled=True)
+            },
+            use_container_width=True, hide_index=True
+        )
+        if st.button("💾 刪除勾選的錯誤紀錄", type="primary", key="del_err"):
+            loading_ph8 = st.empty()
+            loading_ph8.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            gc, sh, _ = get_google_connection()
+            mapping_ws = sh.worksheet('Mapping')
+            
+            rows_to_del = []
+            for idx, row in edited_err.iterrows():
+                if row["🗑️ 刪除此行"]:
+                    rows_to_del.append(int(row["行數"]))
+                    
+            # 💡 由下往上刪除
+            for r in sorted(list(set(rows_to_del)), reverse=True):
+                mapping_ws.delete_rows(r)
+                
+            if rows_to_del:
+                fetch_all_google_data.clear()
+                loading_ph8.empty()
+                st.success(f"🎉 成功刪除 {len(rows_to_del)} 筆錯誤紀錄！")
+                st.session_state['health_errors'] = None
+                time.sleep(1.5)
+                st.rerun()
+            else:
+                loading_ph8.empty()
+                st.warning("⚠️ 沒有勾選任何刪除項目。")
 
     st.markdown("---")
     st.markdown("### 🚯 Phase 2: 黑名單 (Ignore List) 快速管理")
