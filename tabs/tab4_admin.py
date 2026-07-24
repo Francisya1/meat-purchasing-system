@@ -71,7 +71,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                     price_num = 0.0
                     preview_price = "Sold out (清)"
                 else:
-                    # 💡 導入 Regex 數字萃取器，解決 "$45" 轉換失敗的問題
                     nums = re.findall(r'\d+\.?\d*', str(price_val))
                     if nums:
                         price_num = float(nums[0])
@@ -255,13 +254,15 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         except:
             mapping_data_raw = []
             
+        # 💡 修復: 記錄每筆 Mapping 的絕對行數，作為隱形追蹤標籤
         map_lookup = {}
-        for r in mapping_data_raw:
+        for idx, r in enumerate(mapping_data_raw):
+            excel_row = idx + 2 # Google Sheet 的資料從第 2 行開始
             sup = str(r.get('供應商','')).strip()
             sku = str(r.get('對應SKU','')).strip()
             raw = str(r.get('供應商原文','')).strip()
             if sup and sku and raw:
-                map_lookup.setdefault((sup, sku), []).append(raw)
+                map_lookup.setdefault((sup, sku), []).append({'raw': raw, 'row': excel_row})
                 
         anomalies = []
         for sn, vals in cat_data.items():
@@ -290,19 +291,22 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                         diff_pct = (p - avg_p) / avg_p
                         if abs(diff_pct) >= 0.15: 
                             status = f"🔴 貴 {diff_pct*100:.1f}%" if diff_pct > 0 else f"🔵 平 {abs(diff_pct)*100:.1f}%"
-                            raw_names = map_lookup.get((sup, sku), ["未知(未綁定或手動填入)"])
-                            for raw in raw_names:
-                                anomalies.append({
-                                    "🗑️ 刪除此 Mapping": False,
-                                    "✔️ 修正": False,
-                                    "供應商": sup,
-                                    "報價單原文": raw,
-                                    "原綁定 SKU": f"[{sku}] {std_name}",
-                                    "該行平均價": avg_p,
-                                    "異常價錢": p,
-                                    "系統判定": status,
-                                    "🔄 重新綁定至 (新SKU)": "請選擇對應產品..."
-                                })
+                            raw_infos = map_lookup.get((sup, sku), [{'raw': "未知(未綁定或手動填入)", 'row': -1}])
+                            
+                            for info in raw_infos:
+                                if info['row'] != -1:
+                                    anomalies.append({
+                                        "🗑️ 刪除此 Mapping": False,
+                                        "✔️ 修正": False,
+                                        "供應商": sup,
+                                        "報價單原文": info['raw'],
+                                        "原綁定 SKU": f"[{sku}] {std_name}",
+                                        "該行平均價": avg_p,
+                                        "異常價錢": p,
+                                        "系統判定": status,
+                                        "🔄 重新綁定至 (新SKU)": "請選擇對應產品...",
+                                        "excel_row": info['row'] # 隱形標籤
+                                    })
                                 
         loading_ph6.empty()
         if anomalies:
@@ -315,10 +319,10 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         df_anom = pd.DataFrame(st.session_state['anomaly_data'])
         df_anom["該行平均價"] = df_anom["該行平均價"].apply(lambda x: f"${x:.1f}")
         df_anom["異常價錢"] = df_anom["異常價錢"].apply(lambda x: f"${x:.1f}")
-        display_cols = ["🗑️ 刪除此 Mapping", "✔️ 修正", "供應商", "報價單原文", "原綁定 SKU", "該行平均價", "異常價錢", "系統判定", "🔄 重新綁定至 (新SKU)"]
         
+        # 💡 將整個 DataFrame 傳入，利用 column_config 隱藏 excel_row 欄位
         edited_anom = st.data_editor(
-            df_anom[display_cols],
+            df_anom,
             column_config={
                 "🗑️ 刪除此 Mapping": st.column_config.CheckboxColumn("🗑️ 刪除此 Mapping", help="勾選後將直接從資料庫移除此紀錄"),
                 "✔️ 修正": st.column_config.CheckboxColumn("✔️ 修正"),
@@ -328,7 +332,8 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                 "該行平均價": st.column_config.TextColumn(disabled=True),
                 "異常價錢": st.column_config.TextColumn(disabled=True),
                 "系統判定": st.column_config.TextColumn(disabled=True),
-                "🔄 重新綁定至 (新SKU)": st.column_config.SelectboxColumn("🔄 重新綁定至 (新SKU)", options=all_db_options)
+                "🔄 重新綁定至 (新SKU)": st.column_config.SelectboxColumn("🔄 重新綁定至 (新SKU)", options=all_db_options),
+                "excel_row": None # 完美隱藏追蹤標籤
             },
             use_container_width=True, hide_index=True, height=400
         )
@@ -341,28 +346,25 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             
             cells_to_update = []
             rows_to_delete = []
-            all_maps = mapping_ws.get_all_values()
             
             for idx, row in edited_anom.iterrows():
-                if row["🗑️ 刪除此 Mapping"] or row["✔️ 修正"]:
-                    sup = row["供應商"]
-                    raw_name = row["報價單原文"]
-                    
-                    for r_i, m_row in enumerate(all_maps):
-                        if r_i == 0: continue
-                        if len(m_row) >= 3 and m_row[0].strip() == sup and m_row[1].strip() == raw_name:
-                            target_row = r_i + 1
-                            if row["🗑️ 刪除此 Mapping"]:
-                                rows_to_delete.append(target_row)
-                            else:
-                                new_sku_full = row["🔄 重新綁定至 (新SKU)"]
-                                if "請選擇" not in new_sku_full:
-                                    match = re.search(r'\[(.*?)\]', new_sku_full)
-                                    if match:
-                                        pure_sku = match.group(1)
-                                        cell_a1 = gspread.utils.rowcol_to_a1(target_row, 3)
-                                        cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
+                is_del = row.get("🗑️ 刪除此 Mapping", False)
+                is_fix = row.get("✔️ 修正", False)
+                target_row = row.get("excel_row", -1)
+                
+                if (is_del or is_fix) and target_row != -1:
+                    if is_del:
+                        rows_to_delete.append(int(target_row))
+                    else:
+                        new_sku_full = row.get("🔄 重新綁定至 (新SKU)", "")
+                        if "請選擇" not in new_sku_full:
+                            match = re.search(r'\[(.*?)\]', new_sku_full)
+                            if match:
+                                pure_sku = match.group(1)
+                                cell_a1 = gspread.utils.rowcol_to_a1(int(target_row), 3) # C欄是對應SKU
+                                cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
 
+            # 💡 由下往上刪除，絕對不會切錯行
             for r in sorted(list(set(rows_to_delete)), reverse=True):
                 mapping_ws.delete_rows(r)
                 
