@@ -143,7 +143,10 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             map_ws = sh.worksheet('Mapping')
             
             map_adds = []
+            
+            # 💡 修復 Phase 4: 加入 formats_by_sheet 確保成功上色與寫入
             updates_by_sheet = {}
+            formats_by_sheet = {}
             history_records = []
             
             hk_tz = pytz.timezone('Asia/Hong_Kong')
@@ -191,33 +194,39 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                 if lb_col != -1:
                                     cell_a1 = gspread.utils.rowcol_to_a1(target_row_idx, lb_col)
                                     updates_by_sheet.setdefault(target_sn, []).append({'range': cell_a1, 'values': [[val_lb]]})
+                                    formats_by_sheet.setdefault(target_sn, []).append((cell_a1, fmt))
                                 if kg_col != -1:
                                     cell_a1 = gspread.utils.rowcol_to_a1(target_row_idx, kg_col)
                                     updates_by_sheet.setdefault(target_sn, []).append({'range': cell_a1, 'values': [[val_kg]]})
+                                    formats_by_sheet.setdefault(target_sn, []).append((cell_a1, fmt))
                                     
                                 history_records.append([sys_today, quote_date_str, st.session_state['radar_sup'], pure_sku, raw_name, val_lb, val_kg])
             
-            if map_adds: map_ws.append_rows(map_adds)
+            if map_adds: 
+                map_ws.append_rows(map_adds)
+                
             if updates_by_sheet:
-                for sn, upds in updates_by_sheet.items():
-                    sh.worksheet(sn).batch_update(upds)
-            if history_records: sh.worksheet('History_Log').append_rows(history_records)
+                for sn in updates_by_sheet:
+                    target_ws = sh.worksheet(sn)
+                    target_ws.batch_update(updates_by_sheet[sn])
+                    if sn in formats_by_sheet and formats_by_sheet[sn]:
+                        format_cell_ranges(target_ws, formats_by_sheet[sn])
+                        
+            if history_records:
+                sh.worksheet('History_Log').append_rows(history_records)
                 
             if map_adds or updates_by_sheet:
                 fetch_all_google_data.clear()
                 loading_ph5.empty()
                 st.balloons()
-                st.success(f"🎉 批次處理成功！新增了 {len(map_adds)} 筆 Mapping！")
+                st.success(f"🎉 成功新增了 {len(map_adds)} 筆 Mapping，且已同步寫入價錢至母表！")
                 st.session_state['inbox_data'] = None
                 time.sleep(2)
                 st.rerun()
             else:
                 loading_ph5.empty()
-                st.warning("⚠️ 沒有勾選任何項目寫入。")
+                st.warning("⚠️ 沒有勾選任何項目寫入，或母表中無價錢欄位可更新。")
 
-    # ==========================================
-    # 🎯 Phase 4: 價格錨點異常偵測
-    # ==========================================
     st.markdown("---")
     st.markdown("### 🎯 Phase 4: 價格錨點異常偵測 (AI 自動糾錯)")
     st.write("利用同行報價作為基準 (Anchor)，如果某供應商的價錢偏離同行平均超過 **15%**，系統將自動列出，讓你檢查是否因為 Mapping 錯綁了不同等級的產品。")
