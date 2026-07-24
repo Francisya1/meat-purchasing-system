@@ -17,8 +17,13 @@ def render_tab3(STATIC_DICT, cat_data, HEADER_MAP, parsed_history):
     if submit_bulk and bulk_query:
         bulk_q_clean = clean_string(bulk_query)
         search_aliases = set([bulk_q_clean])
+        
+        # 💡 Phase 2: 智能雙向切詞
         for key, aliases in STATIC_DICT.items():
-            if key in bulk_q_clean or bulk_q_clean in key: search_aliases.update(aliases)
+            if bulk_q_clean in aliases or bulk_q_clean in key or key in bulk_q_clean:
+                search_aliases.update(aliases)
+                search_aliases.add(key)
+                
         st.info(f"🧠 智能搜尋擴展：`{', '.join(search_aliases)}`")
         bulk_matches = []
         for sn, all_vals in cat_data.items():
@@ -41,15 +46,22 @@ def render_tab3(STATIC_DICT, cat_data, HEADER_MAP, parsed_history):
                         if lb_col != -2 and lb_col < len(row):
                             val_str = str(row[lb_col]).strip()
                             nums = re.findall(r'\d+\.?\d*', val_str)
+                            # 💡 Phase 2: 強制剔除 $0 產品
                             if nums and float(nums[0]) > 0 and "sold out" not in val_str.lower():
                                 current_prices[sup_name] = round(float(nums[0]), 1)
                     bulk_matches.append({"sku": sku, "name": std_name, "origin": str(row[1]).strip() if len(row)>1 else "未標明", "current_prices": current_prices})
+        
         if not bulk_matches:
             st.warning("沒有在母表中找到符合該關鍵字的產品。"); st.session_state['bulk_matches'] = None
-        else: st.session_state['bulk_matches'] = bulk_matches
+        else: 
+            st.session_state['bulk_matches'] = bulk_matches
             
     if st.session_state.get('bulk_matches'):
         matches = st.session_state['bulk_matches']
+        
+        # 💡 Phase 2: 沉底排序法 (讓沒有任何現價的產品排到最下面)
+        matches = sorted(matches, key=lambda x: 0 if len(x['current_prices']) > 0 else 1)
+        
         st.markdown("### 🎯 第二步：精準鎖定 (點擊下拉選單過濾)")
         col_f1, col_f2 = st.columns(2)
         all_origins = sorted(list(set([m['origin'] for m in matches if m['origin']])))
@@ -57,6 +69,7 @@ def render_tab3(STATIC_DICT, cat_data, HEADER_MAP, parsed_history):
         with col_f1: f_origins = st.multiselect("🌍 鎖定產地", all_origins, placeholder="全部產地 (可選多個)")
         with col_f2: f_skus = st.multiselect("📌 鎖定精準 SKU / 品名", all_skus, placeholder="全部產品 (可選多個)")
         st.markdown("---")
+        
         filtered_matches = matches
         if f_origins: filtered_matches = [m for m in filtered_matches if m['origin'] in f_origins]
         if f_skus: filtered_matches = [m for m in filtered_matches if f"[{m['sku']}] {m['name']}" in f_skus]
@@ -84,16 +97,20 @@ def render_tab3(STATIC_DICT, cat_data, HEADER_MAP, parsed_history):
                         css_class = "bulk-price-tag bulk-cheapest" if is_cheapest else "bulk-price-tag"
                         star = "🏆 " if is_cheapest else ""
                         current_tags_html += f"<span class='{css_class}'>{star}{sup}: ${price:.1f}</span>"
-                else: current_tags_html = "<span class='bulk-price-tag' style='color:#999;'>全行斷貨 (Sold out)</span>"
+                else: current_tags_html = "<span class='bulk-price-tag' style='color:#999; text-decoration:line-through;'>全行斷貨 (Sold out)</span>"
                 
                 conclusion_html = ""
-                if current_min is None: conclusion_html = f"<div class='bulk-warning'>⚠️ <b>系統分析：</b> 目前全行斷貨，無貨可入。</div>"
-                elif historical_min is None: conclusion_html = f"<div class='bulk-conclusion' style='color:#555; border-color:#999; background:#f0f0f0;'>ℹ️ <b>系統分析：</b> 無過去報價可比對，請依現價 ${current_min:.1f} 自行判斷。</div>"
+                card_style = ""
+                if current_min is None: 
+                    conclusion_html = f"<div class='bulk-warning' style='background:#f9f9f9; color:#777; border-color:#ccc;'>⚠️ <b>系統分析：</b> 目前全行斷貨，無貨可入。</div>"
+                    card_style = "opacity: 0.6; filter: grayscale(100%);" # 💡 斷貨的卡片灰階處理
+                elif historical_min is None: 
+                    conclusion_html = f"<div class='bulk-conclusion' style='color:#555; border-color:#999; background:#f0f0f0;'>ℹ️ <b>系統分析：</b> 無過去報價可比對，請依現價 ${current_min:.1f} 自行判斷。</div>"
                 else:
                     if current_min <= historical_min: conclusion_html = f"<div class='bulk-conclusion'>💡 <b>強烈建議入貨：</b> 現時最低價 (${current_min:.1f}) 已平過或等同於歷史絕對低位！</div>"
                     else:
                         diff = current_min - historical_min
                         conclusion_html = f"<div class='bulk-warning'>⚠️ <b>建議觀望或講價：</b> 現價 (${current_min:.1f}) 距離你曾買過的歷史最低價 (${historical_min:.1f}) 貴了 ${diff:.1f}。</div>"
 
-                bulk_card_html = f"<div class='bulk-card'><div class='bulk-header'>【{item['origin']}】 {item['name']} (SKU: {sku})</div><div class='bulk-section'><b>👀 現時全行各家報價：</b><br>{current_tags_html}</div><div class='bulk-history'><b>📈 過去 3 次真實報價紀錄：</b><br>{last_3_html}</div>{conclusion_html}</div>"
+                bulk_card_html = f"<div class='bulk-card' style='{card_style}'><div class='bulk-header'>【{item['origin']}】 {item['name']} (SKU: {sku})</div><div class='bulk-section'><b>👀 現時全行各家報價：</b><br>{current_tags_html}</div><div class='bulk-history'><b>📈 過去 3 次真實報價紀錄：</b><br>{last_3_html}</div>{conclusion_html}</div>"
                 st.markdown(bulk_card_html, unsafe_allow_html=True)
