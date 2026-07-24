@@ -41,66 +41,68 @@ def find_price_columns(vals, supplier, header_map):
         if lb_col != -1 or kg_col != -1: break
     return lb_col, kg_col
 
+# 💡 修復: 完美相容標準表格與殘缺表格，不再漏抓
 def extract_robust_pool(pdf_bytes, supplier):
     robust_pool = {}
     with pdfplumber.open(pdf_bytes) as pdf:
         for page in pdf.pages:
-            lines = []
             text = page.extract_text()
-            if text: lines.extend(text.split('\n'))
+            lines = text.split('\n') if text else []
             tables = page.extract_tables()
-            for table in tables:
-                for row in table:
-                    row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
-                    lines.append(row_str)
-                    
-            for line in lines:
-                if supplier in ["萬安(遠東)", "浩新"]:
-                    matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
-                    for match in matches:
-                        raw_name = match.group(1).strip()
-                        raw_name = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name, flags=re.IGNORECASE).strip()
-                        raw_name = re.sub(r'[\$\s/\|]+$', '', raw_name).strip()
-                        price_str = match.group(2)
-                        unit_str = match.group(3) if match.group(3) else ""
+            
+            if supplier in ["萬安(遠東)", "浩新", "形澧"]:
+                for table in tables:
+                    for row in table:
+                        row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
+                        lines.append(row_str)
                         
-                        c_raw = clean_string(raw_name)
-                        if len(c_raw) > 2:
-                            robust_pool[c_raw] = {'price': price_str, 'unit': unit_str, 'raw_name': raw_name}
-                elif supplier == "形澧":
-                    line = line.strip()
-                    if len(line) < 5: continue
-                    line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
-                    line = re.sub(r'\s*([*xX])\s*', r'\1', line)
-                    tokens = re.split(r'\s+|\|', line)
-                    raw_price = 0.0
-                    price_str_for_split = ""
-                    for token in reversed(tokens):
-                        tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
-                        if not tc: continue
-                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
-                        if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
-                        if re.match(r'^\d+(?:\.\d+)?$', tc):
-                            val = float(tc)
-                            if val > 0:
-                                raw_price = val
-                                price_str_for_split = token
-                                break
-                    if raw_price > 0:
-                        raw_name = line.rsplit(price_str_for_split, 1)[0].strip()
-                        raw_name = re.sub(r'[\s\|]+$', '', raw_name)
-                        c_raw = clean_string(raw_name)
-                        if len(c_raw) > 2:
-                            robust_pool[c_raw] = {'price': str(raw_price), 'unit': "", 'raw_name': raw_name}
-                else:
-                    from modules.pdf_xray import parse_supplier_row
-                    parts = parse_supplier_row(supplier, [line])
-                    for part in parts:
-                        p_name = part[0]
-                        if "@@@" in p_name: p_name = p_name.split("@@@")[0]
-                        c_raw = clean_string(p_name)
-                        if len(c_raw) > 2:
-                            robust_pool[c_raw] = {'price': part[1], 'unit': part[2], 'raw_name': p_name}
+                for line in lines:
+                    if supplier in ["萬安(遠東)", "浩新"]:
+                        matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
+                        for match in matches:
+                            raw_name = match.group(1).strip()
+                            raw_name = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name, flags=re.IGNORECASE).strip()
+                            raw_name = re.sub(r'[\$\s/\|]+$', '', raw_name).strip()
+                            c_raw = clean_string(raw_name)
+                            if len(c_raw) > 2:
+                                robust_pool[c_raw] = {'price': match.group(2), 'unit': match.group(3) or "", 'raw_name': raw_name}
+                    elif supplier == "形澧":
+                        line = line.strip()
+                        if len(line) < 5: continue
+                        line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
+                        line = re.sub(r'\s*([*xX])\s*', r'\1', line)
+                        tokens = re.split(r'\s+|\|', line)
+                        raw_price = 0.0
+                        price_str_for_split = ""
+                        for token in reversed(tokens):
+                            tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
+                            if not tc: continue
+                            if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                            if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
+                            if re.match(r'^\d+(?:\.\d+)?$', tc):
+                                val = float(tc)
+                                if val > 0:
+                                    raw_price = val
+                                    price_str_for_split = token
+                                    break
+                        if raw_price > 0:
+                            raw_name = line.rsplit(price_str_for_split, 1)[0].strip()
+                            raw_name = re.sub(r'[\s\|]+$', '', raw_name)
+                            c_raw = clean_string(raw_name)
+                            if len(c_raw) > 2:
+                                robust_pool[c_raw] = {'price': str(raw_price), 'unit': "", 'raw_name': raw_name}
+            else:
+                from modules.pdf_xray import parse_supplier_row
+                for table in tables:
+                    for row in table:
+                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                        parts = parse_supplier_row(supplier, cells)
+                        for part in parts:
+                            p_name = part[0]
+                            if "@@@" in p_name: p_name = p_name.split("@@@")[0]
+                            c_raw = clean_string(p_name)
+                            if len(c_raw) > 2:
+                                robust_pool[c_raw] = {'price': part[1], 'unit': part[2], 'raw_name': p_name}
     return robust_pool
 
 def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_history, get_wavy_loading_html):
