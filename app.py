@@ -1,20 +1,26 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import re
 import random
 from datetime import datetime
+import re
 
-from modules.google_db import (
-    fetch_all_google_data, SUPPLIERS, clean_string
-)
+# 1. 頁面設定 (必須是第一個 Streamlit 指令)
+st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
-# 導入拆分後的分頁模組
+# 2. 嘗試匯入 Cookie 管理器 (自動防呆機制)
+try:
+    from streamlit_cookies_controller import CookieController
+    cookie_controller = CookieController()
+    has_cookie_lib = True
+except ImportError:
+    has_cookie_lib = False
+
+# 3. 匯入底層模組與拆分後的分頁
+from modules.google_db import fetch_all_google_data, SUPPLIERS, clean_string
 from tabs.tab1_update import render_tab1
 from tabs.tab2_search import render_tab2
 from tabs.tab3_analysis import render_tab3
 from tabs.tab4_admin import render_tab4
-
-st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
 # ==========================================
 # 🛑 終極封殺 CTRL+C 的攔截器
@@ -90,33 +96,61 @@ def get_wavy_loading_html():
     spans = "".join([f"<span style='animation-delay: {i*0.1}s'>{c}</span>" for i, c in enumerate(chars)])
     return f"<div class='wave-text'>{spans}</div>"
 
+# ==========================================
+# 🔑 智慧登入系統 (支援 Cookie)
+# ==========================================
 def check_password():
-    if "login_success" not in st.session_state:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            with st.form("login_form"):
-                st.markdown("<h2 style='text-align: center; margin-top:0; padding-top:0;'>更新報價及搜尋系統</h2><hr style='margin-top:0;'>", unsafe_allow_html=True)
-                username = st.text_input("👤 使用者名稱", placeholder="你的名字 (例如: Francis)")
-                password = st.text_input("🔑 密碼", type="password")
-                st.markdown("<br>", unsafe_allow_html=True)
-                submitted = st.form_submit_button("🚀 登入 / Enter", use_container_width=True)
-                if submitted:
-                    if not username.strip(): st.warning("⚠️ 請填寫使用者名稱！")
-                    elif password == "Meat2026":
-                        st.session_state["login_success"] = True
-                        st.session_state["username"] = username.strip()
-                        st.rerun()
-                    else: st.error("❌ 密碼錯誤，請重新輸入！")
-        return False
-    return True
+    # 1. 檢查 Session 狀態
+    if st.session_state.get("login_success"):
+        return True
+
+    # 2. 檢查 Cookie 狀態 (無縫通關)
+    if has_cookie_lib:
+        auth_cookie = cookie_controller.get('meat_app_auth')
+        if auth_cookie == "Meat2026_Logged_In":
+            st.session_state["login_success"] = True
+            st.session_state["username"] = cookie_controller.get('meat_app_user') or "User"
+            return True
+
+    # 3. 顯示登入畫面
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            st.markdown("<h2 style='text-align: center; margin-top:0; padding-top:0;'>更新報價及搜尋系統</h2><hr style='margin-top:0;'>", unsafe_allow_html=True)
+            username = st.text_input("👤 使用者名稱", placeholder="你的名字 (例如: Francis)")
+            password = st.text_input("🔑 密碼", type="password")
+            
+            remember_me = False
+            if has_cookie_lib:
+                remember_me = st.checkbox("☑️ 記住我 (保持登入狀態 30 天)")
+            else:
+                st.caption("*(系統載入中，若無法勾選「記住我」，請確認伺服器套件已更新)*")
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("🚀 登入 / Enter", use_container_width=True)
+            
+            if submitted:
+                if not username.strip(): 
+                    st.warning("⚠️ 請填寫使用者名稱！")
+                elif password == "Meat2026":
+                    st.session_state["login_success"] = True
+                    st.session_state["username"] = username.strip()
+                    
+                    # 將授權寫入瀏覽器 Cookie
+                    if remember_me and has_cookie_lib:
+                        cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400)
+                        cookie_controller.set('meat_app_user', username.strip(), max_age=30*86400)
+                        
+                    st.rerun()
+                else: 
+                    st.error("❌ 密碼錯誤，請重新輸入！")
+    return False
 
 if not check_password(): st.stop()
 
-if 'preview_data' not in st.session_state: st.session_state['preview_data'] = None
-
 # ==========================================
-# ⚙️ 系統常數與設定
+# ⚙️ 系統常數與設定字典
 # ==========================================
 ACTIVE_SUPPLIERS = sorted(list(set(SUPPLIERS + ["形澧"])))
 HEADER_MAP = {
@@ -143,7 +177,7 @@ STATIC_DICT = {
 }
 
 # ==========================================
-# 📥 讀取母表資料
+# 📥 讀取母表資料庫
 # ==========================================
 loading_ph = st.empty()
 loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
@@ -163,7 +197,7 @@ if len(hist_vals) > 1:
             except: pass
 
 # ==========================================
-# 📝 側邊欄
+# 📝 側邊欄控制台
 # ==========================================
 with st.sidebar:
     st.markdown(f"### 👋 歡迎回來, **{st.session_state.get('username', 'User')}**!")
@@ -181,7 +215,15 @@ with st.sidebar:
             date_str = latest_dates.get(sup, "尚未更新")
             if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
             else: st.success(f"**{sup}** : {date_str}")
-    st.caption("版本號: v27.0 (微服務模組化架構)")
+            
+    st.markdown("---")
+    if has_cookie_lib and st.button("🚪 登出系統", use_container_width=True):
+        cookie_controller.remove('meat_app_auth')
+        cookie_controller.remove('meat_app_user')
+        st.session_state.clear()
+        st.rerun()
+        
+    st.caption("版本號: v28.0 (模組化架構 & 記住我功能)")
 
 # ==========================================
 # 🚀 路由分發 (載入各個分頁模組)
