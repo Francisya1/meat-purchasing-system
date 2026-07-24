@@ -41,7 +41,6 @@ def find_price_columns(vals, supplier, header_map):
         if lb_col != -1 or kg_col != -1: break
     return lb_col, kg_col
 
-# 💡 修復: 完美相容標準表格與殘缺表格，不再漏抓
 def extract_robust_pool(pdf_bytes, supplier):
     robust_pool = {}
     with pdfplumber.open(pdf_bytes) as pdf:
@@ -153,11 +152,12 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                                 if price_val == "清" or "sold" in str(price_val).lower():
                                     extracted_items[sku] = {'raw_price': 0.0, 'guessed_unit': 'SOLD_OUT', 'raw_name': r_data['raw_name'], 'matched_line': '深層救援成功'}
                                 else:
-                                    try:
-                                        p_f = float(price_val)
-                                        g_u = "KG" if "kg" in clean_string(r_data['unit']) else "LB"
+                                    # 💡 導入 Regex 數字萃取器
+                                    nums = re.findall(r'\d+\.?\d*', str(price_val))
+                                    if nums:
+                                        p_f = float(nums[0])
+                                        g_u = "KG" if "kg" in clean_string(str(r_data.get('unit', ''))) else "LB"
                                         extracted_items[sku] = {'raw_price': p_f, 'guessed_unit': g_u, 'raw_name': r_data['raw_name'], 'matched_line': '深層救援成功'}
-                                    except: pass
                                 break
 
                 history_lows = {}
