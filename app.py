@@ -1,21 +1,48 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import random
+import time
 from datetime import datetime
 import re
 
 # 1. 頁面設定 (必須是第一個 Streamlit 指令)
 st.set_page_config(page_title="更新報價及搜尋系統 - Francis", layout="wide", page_icon="📊")
 
-# 2. 嘗試匯入 Cookie 管理器 (自動防呆機制)
+# ==========================================
+# 🗄️ 全域系統抽屜 (Session State) 初始化
+# 確保模組化後，所有 Tab 都能找到對應的變數
+# ==========================================
+if 'login_success' not in st.session_state: st.session_state['login_success'] = False
+if 'username' not in st.session_state: st.session_state['username'] = "User"
+if 'preview_data' not in st.session_state: st.session_state['preview_data'] = None
+if 'current_supplier' not in st.session_state: st.session_state['current_supplier'] = None
+if 'current_quote_date' not in st.session_state: st.session_state['current_quote_date'] = None
+if 'bulk_matches' not in st.session_state: st.session_state['bulk_matches'] = None
+if 'inbox_data' not in st.session_state: st.session_state['inbox_data'] = None
+if 'radar_sup' not in st.session_state: st.session_state['radar_sup'] = None
+if 'radar_date_str' not in st.session_state: st.session_state['radar_date_str'] = None
+if 'anomaly_data' not in st.session_state: st.session_state['anomaly_data'] = None
+
+# ==========================================
+# 🍪 嘗試匯入 Cookie 管理器 (包含異步緩衝機制)
+# ==========================================
 try:
     from streamlit_cookies_controller import CookieController
     cookie_controller = CookieController()
     has_cookie_lib = True
 except ImportError:
     has_cookie_lib = False
+    cookie_controller = None
 
-# 3. 匯入底層模組與拆分後的分頁
+# 💡 終極防呆：給前端 0.3 秒的時間把 Cookie 傳遞給 Python 後台
+if has_cookie_lib and 'cookie_fetched' not in st.session_state:
+    time.sleep(0.3)
+    st.session_state['cookie_fetched'] = True
+    st.rerun()
+
+# ==========================================
+# 📥 匯入底層模組與拆分後的分頁
+# ==========================================
 from modules.google_db import fetch_all_google_data, SUPPLIERS, clean_string
 from tabs.tab1_update import render_tab1
 from tabs.tab2_search import render_tab2
@@ -100,11 +127,9 @@ def get_wavy_loading_html():
 # 🔑 智慧登入系統 (支援 Cookie)
 # ==========================================
 def check_password():
-    # 1. 檢查 Session 狀態
     if st.session_state.get("login_success"):
         return True
 
-    # 2. 檢查 Cookie 狀態 (無縫通關)
     if has_cookie_lib:
         auth_cookie = cookie_controller.get('meat_app_auth')
         if auth_cookie == "Meat2026_Logged_In":
@@ -112,7 +137,6 @@ def check_password():
             st.session_state["username"] = cookie_controller.get('meat_app_user') or "User"
             return True
 
-    # 3. 顯示登入畫面
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -137,7 +161,6 @@ def check_password():
                     st.session_state["login_success"] = True
                     st.session_state["username"] = username.strip()
                     
-                    # 將授權寫入瀏覽器 Cookie
                     if remember_me and has_cookie_lib:
                         cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400)
                         cookie_controller.set('meat_app_user', username.strip(), max_age=30*86400)
@@ -223,7 +246,7 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
         
-    st.caption("版本號: v28.0 (模組化架構 & 記住我功能)")
+    st.caption("版本號: v28.1 (全域初始化 & Cookie 穩定版)")
 
 # ==========================================
 # 🚀 路由分發 (載入各個分頁模組)
