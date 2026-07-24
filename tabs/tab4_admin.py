@@ -46,14 +46,26 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         pdf_bytes = io.BytesIO(radar_file.read())
         robust_pool = extract_robust_pool(pdf_bytes, radar_sup)
         
-        # 💡 修復: 確保字典長度大於1，防止被空白字串誤導
-        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, []) if len(clean_string(m['name'])) > 1]
-        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, []) if len(clean_string(ig)) > 1]
+        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
+        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
         
         unmapped_items = []
         for c_raw, r_data in robust_pool.items():
-            is_mapped = any(em in c_raw or c_raw in em for em in existing_mappings)
-            is_ignored = any(ig in c_raw for ig in ignored_items)
+            
+            # 💡 修復: 嚴格的比對機制，消滅因單個字串導致「全部已 Mapping」的 Bug
+            is_mapped = False
+            for em in existing_mappings:
+                if em == c_raw:
+                    is_mapped = True; break
+                if len(em) >= 4 and len(c_raw) >= 4 and (em in c_raw or c_raw in em):
+                    is_mapped = True; break
+                    
+            is_ignored = False
+            for ig in ignored_items:
+                if ig == c_raw:
+                    is_ignored = True; break
+                if len(ig) >= 3 and len(c_raw) >= 3 and (ig in c_raw or c_raw in ig):
+                    is_ignored = True; break
             
             if not is_mapped and not is_ignored:
                 price_val = r_data['price']
@@ -345,7 +357,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                         cell_a1 = gspread.utils.rowcol_to_a1(target_row, 3)
                                         cells_to_update.append({'range': cell_a1, 'values': [[pure_sku]]})
 
-            # 💡 由下往上刪除，避免行數改變導致刪錯資料
             for r in sorted(list(set(rows_to_delete)), reverse=True):
                 mapping_ws.delete_rows(r)
                 
@@ -439,7 +450,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                 if row["🗑️ 刪除此行"]:
                     rows_to_del.append(int(row["行數"]))
                     
-            # 💡 由下往上刪除
             for r in sorted(list(set(rows_to_del)), reverse=True):
                 mapping_ws.delete_rows(r)
                 
