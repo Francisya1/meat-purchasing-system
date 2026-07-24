@@ -46,13 +46,11 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         pdf_bytes = io.BytesIO(radar_file.read())
         robust_pool = extract_robust_pool(pdf_bytes, radar_sup)
         
-        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, [])]
-        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, [])]
+        existing_mappings = [clean_string(m['name']) for m in target_dict.get(radar_sup, []) if len(clean_string(m['name'])) > 1]
+        ignored_items = [clean_string(ig) for ig in ignore_dict.get(radar_sup, []) if len(clean_string(ig)) > 1]
         
         unmapped_items = []
         for c_raw, r_data in robust_pool.items():
-            
-            # 💡 修復: 嚴格的比對機制，消滅因單個字串導致「全部已 Mapping」的 Bug
             is_mapped = False
             for em in existing_mappings:
                 if em == c_raw:
@@ -73,9 +71,17 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                     price_num = 0.0
                     preview_price = "Sold out (清)"
                 else:
-                    try: price_num = float(price_val)
-                    except: price_num = 0.0
-                    preview_price = f"${price_num} / LB"
+                    # 💡 導入 Regex 數字萃取器，解決 "$45" 轉換失敗的問題
+                    nums = re.findall(r'\d+\.?\d*', str(price_val))
+                    if nums:
+                        price_num = float(nums[0])
+                        if "kg" in clean_string(str(r_data.get('unit', ''))): 
+                            price_num = price_num / 2.2046
+                        price_num = round(price_num, 1)
+                        preview_price = f"${price_num} / LB"
+                    else:
+                        price_num = 0.0
+                        preview_price = "無價錢"
                     
                 expanded_keywords = set([c_raw])
                 for key, aliases in STATIC_DICT.items():
