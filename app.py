@@ -1,6 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import random
+import time
 from datetime import datetime
 import re
 
@@ -21,11 +22,10 @@ if 'radar_date_str' not in st.session_state: st.session_state['radar_date_str'] 
 if 'anomaly_data' not in st.session_state: st.session_state['anomaly_data'] = None
 
 # ==========================================
-# 🍪 Cookie 管理機制 (順應 Streamlit 生命週期)
+# 🍪 Cookie 管理機制
 # ==========================================
 try:
     from streamlit_cookies_controller import CookieController
-    # 必須在最外層初始化，讓前端能夠順利掛載並回傳資料
     cookie_controller = CookieController(key="auth_cookie_manager")
     has_cookie_lib = True
 except ImportError:
@@ -80,12 +80,18 @@ hide_st_style = """
     }
     .stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #155B8C !important; color: #FFFFFF !important; }
     button[title="View fullscreen"] { display: none !important; }
-    .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; }
+    
+    .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; transition: 0.3s; }
     .product-card-header { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important; }
     .product-card-title { font-size: 16px !important; font-weight: 900 !important; color: #111111 !important; margin: 0 !important; }
     .product-card-body { font-size: 12px !important; color: #666666 !important; line-height: 1.6 !important; }
     .product-card-price-row { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-top: 6px !important; }
     .product-card-price { color: #D9534F !important; font-size: 18px !important; font-weight: bold !important; }
+    
+    .sold-out-card { opacity: 0.55 !important; background-color: #F0F0F0 !important; border: 1px dashed #BBBBBB !important; }
+    .sold-out-card:hover { opacity: 0.8 !important; }
+    .sold-out-price { color: #888888 !important; font-size: 15px !important; text-decoration: line-through; }
+    
     .badge { padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; background-color: #E6F7FF !important; color: #0066CC !important; }
     .badge-danger { background-color: #FFEEEE !important; color: #D9534F !important; }
     .bulk-card { border: 2px solid #1F77B4; border-radius: 10px; padding: 15px; margin-bottom: 15px; background-color: #F4F9FC; }
@@ -110,25 +116,27 @@ def get_wavy_loading_html():
     return f"<div class='wave-text'>{spans}</div>"
 
 # ==========================================
-# 🔑 智慧登入系統 (完美防護 F5)
+# 🔑 智慧登入系統 (支援 Cookie 防禦等待)
 # ==========================================
 def check_password():
-    # 1. 檢查 Session 狀態
-    if st.session_state.get("login_success"):
-        return True
+    if st.session_state.get("login_success"): return True
 
-    # 2. 檢查 Cookie 狀態 (依賴前端自動回傳觸發)
     if has_cookie_lib:
+        # 💡 強迫等待前端 Component 掛載完成，獲取 Cookie
+        if 'cookie_mounted' not in st.session_state:
+            st.session_state['cookie_mounted'] = True
+            st.markdown("<h3 style='text-align:center; padding-top:100px; color:#999;'>🔄 系統安全驗證中，請稍候...</h3>", unsafe_allow_html=True)
+            time.sleep(0.8) 
+            st.rerun()
+
         try:
-            auth = cookie_controller.get('meat_app_auth')
-            if auth == "Meat2026_Logged_In":
+            auth_cookie = cookie_controller.get('meat_app_auth')
+            if auth_cookie == "Meat2026_Logged_In":
                 st.session_state["login_success"] = True
                 st.session_state["username"] = cookie_controller.get('meat_app_user') or "User"
-                st.rerun() # 一旦抓到 Cookie，立刻刷新畫面消滅登入框
-        except Exception:
-            pass
+                st.rerun() 
+        except: pass
 
-    # 3. 繪製登入畫面 (F5的瞬間會短暫顯示，抓到Cookie後會自動消失)
     st.markdown("<br><br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -145,26 +153,23 @@ def check_password():
             submitted = st.form_submit_button("🚀 登入 / Enter", use_container_width=True)
             
             if submitted:
-                if not username.strip(): 
-                    st.warning("⚠️ 請填寫使用者名稱！")
+                if not username.strip(): st.warning("⚠️ 請填寫使用者名稱！")
                 elif password == "Meat2026":
                     st.session_state["login_success"] = True
                     st.session_state["username"] = username.strip()
-                    
                     if remember_me and has_cookie_lib:
                         try:
                             cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400, path='/')
                             cookie_controller.set('meat_app_user', username.strip(), max_age=30*86400, path='/')
                         except: pass
                     st.rerun()
-                else: 
-                    st.error("❌ 密碼錯誤，請重新輸入！")
+                else: st.error("❌ 密碼錯誤，請重新輸入！")
     return False
 
 if not check_password(): st.stop()
 
 # ==========================================
-# ⚙️ 系統常數與設定字典
+# ⚙️ 系統常數與設定
 # ==========================================
 ACTIVE_SUPPLIERS = sorted(list(set(SUPPLIERS + ["形澧"])))
 HEADER_MAP = {
@@ -190,9 +195,6 @@ STATIC_DICT = {
     "肥牛": ["肥牛", "胸腹", "pastrami", "plate", "short plate", "牛腩"]
 }
 
-# ==========================================
-# 📥 讀取母表資料庫
-# ==========================================
 loading_ph = st.empty()
 loading_ph.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
 target_dict, cat_data, hist_vals, global_origins, ignore_dict = fetch_all_google_data()
@@ -210,9 +212,6 @@ if len(hist_vals) > 1:
                 parsed_history.append({'date': q_date, 'sku': sku, 'price': price})
             except: pass
 
-# ==========================================
-# 📝 側邊欄控制台
-# ==========================================
 with st.sidebar:
     st.markdown(f"### 👋 歡迎回來, **{st.session_state.get('username', 'User')}**!")
     st.markdown("---")
@@ -239,11 +238,8 @@ with st.sidebar:
         st.session_state.clear()
         st.rerun()
         
-    st.caption("版本號: v29.1 (極致無縫登入版)")
+    st.caption("版本號: v30.0 (Cookie 終極穩定 & Tab 4 一鍵刪除版)")
 
-# ==========================================
-# 🚀 路由分發 (載入各個分頁模組)
-# ==========================================
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
 with tab1: render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_history, get_wavy_loading_html)
