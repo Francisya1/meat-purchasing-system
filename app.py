@@ -80,18 +80,12 @@ hide_st_style = """
     }
     .stButton > button:hover, div[data-testid="stForm"] button:hover { background-color: #155B8C !important; color: #FFFFFF !important; }
     button[title="View fullscreen"] { display: none !important; }
-    
-    .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; transition: 0.3s; }
+    .product-card { padding: 12px 15px !important; border: 1px solid #DEDEDE !important; border-radius: 8px !important; margin-bottom: 8px !important; background-color: #FAFAFA !important; }
     .product-card-header { display: flex !important; justify-content: space-between !important; align-items: center !important; border-bottom: 1px dashed #CCCCCC !important; padding-bottom: 6px !important; margin-bottom: 6px !important; }
     .product-card-title { font-size: 16px !important; font-weight: 900 !important; color: #111111 !important; margin: 0 !important; }
     .product-card-body { font-size: 12px !important; color: #666666 !important; line-height: 1.6 !important; }
     .product-card-price-row { display: flex !important; justify-content: space-between !important; align-items: center !important; margin-top: 6px !important; }
     .product-card-price { color: #D9534F !important; font-size: 18px !important; font-weight: bold !important; }
-    
-    .sold-out-card { opacity: 0.55 !important; background-color: #F0F0F0 !important; border: 1px dashed #BBBBBB !important; }
-    .sold-out-card:hover { opacity: 0.8 !important; }
-    .sold-out-price { color: #888888 !important; font-size: 15px !important; text-decoration: line-through; }
-    
     .badge { padding: 3px 8px !important; border-radius: 4px !important; font-size: 11px !important; font-weight: bold !important; background-color: #E6F7FF !important; color: #0066CC !important; }
     .badge-danger { background-color: #FFEEEE !important; color: #D9534F !important; }
     .bulk-card { border: 2px solid #1F77B4; border-radius: 10px; padding: 15px; margin-bottom: 15px; background-color: #F4F9FC; }
@@ -116,25 +110,28 @@ def get_wavy_loading_html():
     return f"<div class='wave-text'>{spans}</div>"
 
 # ==========================================
-# 🔑 智慧登入系統 (支援 Cookie 防禦等待)
+# 🔑 智慧登入系統 (雙重防禦: URL + Cookie)
 # ==========================================
 def check_password():
     if st.session_state.get("login_success"): return True
+    
+    # 💡 1. URL 參數防禦 (秒解 F5 重新整理問題)
+    if st.query_params.get("auth") == "valid":
+        st.session_state["login_success"] = True
+        st.session_state["username"] = st.query_params.get("user", "User")
+        return True
 
+    # 💡 2. Cookie 防禦 (解決關閉瀏覽器後重開的問題)
     if has_cookie_lib:
-        # 💡 強迫等待前端 Component 掛載完成，獲取 Cookie
-        if 'cookie_mounted' not in st.session_state:
-            st.session_state['cookie_mounted'] = True
-            st.markdown("<h3 style='text-align:center; padding-top:100px; color:#999;'>🔄 系統安全驗證中，請稍候...</h3>", unsafe_allow_html=True)
-            time.sleep(0.8) 
-            st.rerun()
-
         try:
-            auth_cookie = cookie_controller.get('meat_app_auth')
-            if auth_cookie == "Meat2026_Logged_In":
+            cookies = cookie_controller.getAll()
+            if isinstance(cookies, dict) and cookies.get('meat_app_auth') == "Meat2026_Logged_In":
                 st.session_state["login_success"] = True
-                st.session_state["username"] = cookie_controller.get('meat_app_user') or "User"
-                st.rerun() 
+                st.session_state["username"] = cookies.get('meat_app_user', 'User')
+                # 將狀態寫回 URL，確保之後的 F5 不受影響
+                st.query_params["auth"] = "valid"
+                st.query_params["user"] = st.session_state["username"]
+                return True
         except: pass
 
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -157,6 +154,11 @@ def check_password():
                 elif password == "Meat2026":
                     st.session_state["login_success"] = True
                     st.session_state["username"] = username.strip()
+                    
+                    # 登入成功時，同時寫入 URL 參數與 Cookie
+                    st.query_params["auth"] = "valid"
+                    st.query_params["user"] = username.strip()
+                    
                     if remember_me and has_cookie_lib:
                         try:
                             cookie_controller.set('meat_app_auth', "Meat2026_Logged_In", max_age=30*86400, path='/')
@@ -230,15 +232,17 @@ with st.sidebar:
             else: st.success(f"**{sup}** : {date_str}")
             
     st.markdown("---")
-    if has_cookie_lib and st.button("🚪 登出系統", use_container_width=True):
-        try:
-            cookie_controller.remove('meat_app_auth')
-            cookie_controller.remove('meat_app_user')
-        except: pass
+    if st.button("🚪 登出系統", use_container_width=True):
+        st.query_params.clear() # 清除網址參數
+        if has_cookie_lib:
+            try:
+                cookie_controller.remove('meat_app_auth')
+                cookie_controller.remove('meat_app_user')
+            except: pass
         st.session_state.clear()
         st.rerun()
         
-    st.caption("版本號: v30.0 (Cookie 終極穩定 & Tab 4 一鍵刪除版)")
+    st.caption("版本號: v31.0 (雙重防禦無縫登入 & 雷達精準化版)")
 
 tab1, tab2, tab3, tab4 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)"])
 
