@@ -9,14 +9,46 @@ from googleapiclient.http import MediaIoBaseDownload
 from modules.google_db import clean_string, get_drive_connection, DRIVE_FOLDER_ID
 from tabs.tab1_update import find_price_columns
 
-def extract_date_from_filename(filename):
-    # 從檔名中提取日期（如 2026-07-15 或 2026/07/15）用於絕對時間排序
-    match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', filename)
-    if match:
-        try:
-            return datetime.datetime.strptime(match.group(1).replace('/', '-'), '%Y-%m-%d')
-        except:
-            pass
+# 💡 終極修復：全能時間萃取器 (支援所有日期格式 + Google 雲端時間 Fallback)
+def get_file_date(f):
+    fname = f.get('name', '')
+    
+    # 格式 1: YYYY-MM-DD 或 YYYY.MM.DD 或 YYYY/MM/DD
+    m1 = re.search(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', fname)
+    if m1:
+        try: return datetime.datetime(int(m1.group(1)), int(m1.group(2)), int(m1.group(3)))
+        except: pass
+        
+    # 格式 2: DD-MM-YYYY 或 DD.MM.YYYY
+    m2 = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', fname)
+    if m2:
+        try: return datetime.datetime(int(m2.group(3)), int(m2.group(2)), int(m2.group(1)))
+        except: pass
+        
+    # 格式 3: DD-MMM-YYYY (例如: 29-Jun-2026)
+    m4 = re.search(r'(\d{1,2})[-/.]([A-Za-z]{3})[-/.](\d{4})', fname, re.IGNORECASE)
+    if m4:
+        months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+        m_str = m4.group(2).lower()
+        if m_str in months:
+            try: return datetime.datetime(int(m4.group(3)), months[m_str], int(m4.group(1)))
+            except: pass
+
+    # 格式 4: MMM-YYYY (例如: FEB-2026)
+    m3 = re.search(r'([A-Za-z]{3})[-/.](\d{4})', fname, re.IGNORECASE)
+    if m3:
+        months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+        m_str = m3.group(1).lower()
+        if m_str in months:
+            try: return datetime.datetime(int(m3.group(2)), months[m_str], 1)
+            except: pass
+            
+    # 格式 5: 終極防線！如果檔名沒日期，直接調用 Google 雲端的真實上傳時間
+    ctime = f.get('createdTime')
+    if ctime:
+        try: return datetime.datetime.strptime(ctime.split('.')[0].replace('Z',''), "%Y-%m-%dT%H:%M:%S")
+        except: pass
+        
     return datetime.datetime.min
 
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
@@ -121,6 +153,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
+                # 取得所有雲端 PDF
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
                     fields="files(id, name, createdTime)"
@@ -135,9 +168,10 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
                     
+                    # 💡 核心機制：透過全能時光機，為每個供應商精準挑出「唯一一份」最新報價單
                     files_to_scan = []
                     for sup, flist in supplier_files.items():
-                        sorted_flist = sorted(flist, key=lambda x: extract_date_from_filename(x['name']), reverse=True)
+                        sorted_flist = sorted(flist, key=get_file_date, reverse=True)
                         files_to_scan.append(sorted_flist[0])
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
@@ -243,7 +277,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                         
                         for _, row in df_cloud.iterrows():
-                            # 💡 修復處: {row['品名(純)']} 右側多出的 } 已移除
                             st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
