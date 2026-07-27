@@ -9,46 +9,27 @@ from googleapiclient.http import MediaIoBaseDownload
 from modules.google_db import clean_string, get_drive_connection, DRIVE_FOLDER_ID
 from tabs.tab1_update import find_price_columns
 
-# 💡 終極修復：全能時間萃取器 (支援所有日期格式 + Google 雲端時間 Fallback)
-def get_file_date(f):
-    fname = f.get('name', '')
-    
-    # 格式 1: YYYY-MM-DD 或 YYYY.MM.DD 或 YYYY/MM/DD
-    m1 = re.search(r'(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})', fname)
-    if m1:
-        try: return datetime.datetime(int(m1.group(1)), int(m1.group(2)), int(m1.group(3)))
+def extract_date_from_filename(filename):
+    match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', filename)
+    if match:
+        try: return datetime.datetime.strptime(match.group(1).replace('/', '-'), '%Y-%m-%d')
         except: pass
-        
-    # 格式 2: DD-MM-YYYY 或 DD.MM.YYYY
-    m2 = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', fname)
-    if m2:
-        try: return datetime.datetime(int(m2.group(3)), int(m2.group(2)), int(m2.group(1)))
+    match = re.search(r'(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', filename)
+    if match:
+        try: return datetime.datetime(int(match.group(3)), int(match.group(2)), int(match.group(1)))
         except: pass
-        
-    # 格式 3: DD-MMM-YYYY (例如: 29-Jun-2026)
-    m4 = re.search(r'(\d{1,2})[-/.]([A-Za-z]{3})[-/.](\d{4})', fname, re.IGNORECASE)
-    if m4:
+    match = re.search(r'(\d{1,2})[-/.]([A-Za-z]{3})[-/.](\d{4})', filename, re.IGNORECASE)
+    if match:
         months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
-        m_str = m4.group(2).lower()
-        if m_str in months:
-            try: return datetime.datetime(int(m4.group(3)), months[m_str], int(m4.group(1)))
+        if match.group(2).lower() in months:
+            try: return datetime.datetime(int(match.group(3)), months[match.group(2).lower()], int(match.group(1)))
             except: pass
-
-    # 格式 4: MMM-YYYY (例如: FEB-2026)
-    m3 = re.search(r'([A-Za-z]{3})[-/.](\d{4})', fname, re.IGNORECASE)
-    if m3:
+    match = re.search(r'([A-Za-z]{3})[-/.](\d{4})', filename, re.IGNORECASE)
+    if match:
         months = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
-        m_str = m3.group(1).lower()
-        if m_str in months:
-            try: return datetime.datetime(int(m3.group(2)), months[m_str], 1)
+        if match.group(1).lower() in months:
+            try: return datetime.datetime(int(match.group(2)), months[match.group(1).lower()], 1)
             except: pass
-            
-    # 格式 5: 終極防線！如果檔名沒日期，直接調用 Google 雲端的真實上傳時間
-    ctime = f.get('createdTime')
-    if ctime:
-        try: return datetime.datetime.strptime(ctime.split('.')[0].replace('Z',''), "%Y-%m-%dT%H:%M:%S")
-        except: pass
-        
     return datetime.datetime.min
 
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
@@ -153,7 +134,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
-                # 取得所有雲端 PDF
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
                     fields="files(id, name, createdTime)"
@@ -162,16 +142,32 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                 if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
                 else:
                     supplier_files = {}
+                    
+                    # 💡 修復：雙引擎檔名辨識，找得出新上傳的檔案
+                    def identify_sup(fname):
+                        for s in list(HEADER_MAP.keys()):
+                            if s in fname: return s
+                        for kw, s in FILENAME_MAPPING.items():
+                            if kw in fname: return s
+                        return "未知供應商"
+
                     for f in files:
                         fname = f['name']
-                        sup = next((s for kw, s in FILENAME_MAPPING.items() if kw in fname), "未知供應商")
+                        sup = identify_sup(fname)
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
                     
-                    # 💡 核心機制：透過全能時光機，為每個供應商精準挑出「唯一一份」最新報價單
                     files_to_scan = []
                     for sup, flist in supplier_files.items():
-                        sorted_flist = sorted(flist, key=get_file_date, reverse=True)
+                        # 處理 fallback 時間
+                        for f in flist:
+                            ctime = f.get('createdTime')
+                            if ctime:
+                                try: f['fallback_time'] = datetime.datetime.strptime(ctime.split('.')[0].replace('Z',''), "%Y-%m-%dT%H:%M:%S")
+                                except: f['fallback_time'] = datetime.datetime.min
+                            else: f['fallback_time'] = datetime.datetime.min
+                            
+                        sorted_flist = sorted(flist, key=lambda x: extract_date_from_filename(x['name']) if extract_date_from_filename(x['name']) != datetime.datetime.min else x['fallback_time'], reverse=True)
                         files_to_scan.append(sorted_flist[0])
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
@@ -197,7 +193,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                             })
                     
                     for idx, file in enumerate(files_to_scan):
-                        supplier = next((sup for kw, sup in FILENAME_MAPPING.items() if kw in file['name']), "未知供應商")
+                        supplier = identify_sup(file['name'])
                         request = drive_service.files().get_media(fileId=file['id'])
                         fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
                         done = False
