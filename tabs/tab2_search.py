@@ -22,7 +22,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
         
-        # 💡 Phase 2: 智能切詞與雙向包含引擎 (解決 "牛展" 搜不到 "金錢展" 的問題)
+        # 💡 Phase 2: 智能切詞與雙向包含引擎
         for key, aliases in STATIC_DICT.items():
             if q_clean in aliases or q_clean in key or key in q_clean:
                 search_aliases.update(aliases)
@@ -58,7 +58,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                                 p_val_str = str(r[lb_col_idx]).strip() if lb_col_idx < len(r) else ""
                                 nums = re.findall(r'\d+\.?\d*', p_val_str)
                                 
-                                # 💡 Phase 2: 強制將 $0 判定為斷貨
                                 num_val = float(nums[0]) if nums else 0.0
                                 is_sold_out_now = "sold out" in p_val_str.lower() or num_val <= 0.0
                                 
@@ -77,10 +76,8 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                                 })
             search_ph1.empty()
             if compare_results:
-                # 💡 Phase 2: 沉底排序法 (讓 Sold out 永遠在最後面)
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
                 
-                # 💡 Phase 2: 品項分組比價引擎 (避免雞翼尖與雞翼互比)
                 st.markdown("<h4 style='color:#1f77b4;'>🏆 各品項最低報價：</h4>", unsafe_allow_html=True)
                 cols_b = st.columns(3)
                 col_idx = 0
@@ -98,7 +95,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                 
                 for _, row in df_compare.iterrows():
                     is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
-                    # 💡 導入降級 UI (sold-out-card)
                     card_class = "product-card sold-out-card" if is_soldout_card else "product-card"
                     price_class = "product-card-price sold-out-price" if is_soldout_card else "product-card-price"
                     
@@ -115,7 +111,12 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
-                results = drive_service.files().list(q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false", fields="files(id, name, createdTime)").execute()
+                # 💡 強制要求 Google 雲端回傳「由新到舊」排序的檔案清單
+                results = drive_service.files().list(
+                    q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
+                    fields="files(id, name, createdTime)",
+                    orderBy="createdTime desc"
+                ).execute()
                 files = results.get('files', [])
                 if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
                 else:
@@ -125,6 +126,8 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         sup = next((s for kw, s in FILENAME_MAPPING.items() if kw in fname), "未知供應商")
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
+                    
+                    # 取出每個供應商「時間最新」的那一份報價單
                     files_to_scan = [flist[0] for flist in supplier_files.values()] 
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
@@ -138,7 +141,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         
                         try:
                             p_float = float(price_str)
-                            if p_float <= 0.0: return # 💡 防呆：剔除 $0 產品
+                            if p_float <= 0.0: return 
                         except:
                             if price_str == "清" or "sold" in str(price_str).lower(): return
                             
@@ -206,17 +209,17 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                                                 process_cloud_item(p_name, part[1], part[2], supplier, file['name'])
                     search_ph2.empty()
                     
-                    filtered_cloud = []
-                    seen_cloud = set()
+                    # 💡 使用 Dictionary 取代 Set，透過 UID 覆寫機制強制只保留一筆最新的產品資訊
+                    filtered_cloud_dict = {}
                     for item in cloud_db:
                         if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins):
-                            uid = f"{item['供應商']}_{item['品名(純)']}_{item['換算價 ($/LB)']}"
-                            if uid not in seen_cloud:
-                                seen_cloud.add(uid)
-                                filtered_cloud.append(item)
-                                
-                    if filtered_cloud:
-                        df_cloud = pd.DataFrame(filtered_cloud).sort_values(by="換算價 ($/LB)")
+                            # 拔除價錢作為識別，確保同一規格的產品只會有一筆最新資料
+                            uid = f"{item['供應商']}_{item['產地']}_{item['品牌']}_{item['品名(純)']}_{item['包裝規格']}"
+                            filtered_cloud_dict[uid] = item
+                            
+                    if filtered_cloud_dict:
+                        # 將清理過後的 Dictionary 轉回 List 並按照價錢排序
+                        df_cloud = pd.DataFrame(list(filtered_cloud_dict.values())).sort_values(by="換算價 ($/LB)")
                         
                         st.markdown("<h4 style='color:#1f77b4;'>🏆 雲端未建檔各品項最平：</h4>", unsafe_allow_html=True)
                         cols_c = st.columns(3)
