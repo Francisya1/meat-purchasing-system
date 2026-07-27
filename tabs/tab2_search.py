@@ -134,16 +134,17 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
+                # 💡 修復：加入 supportsAllDrives=True，支援共用雲端硬碟搜尋
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
-                    fields="files(id, name, createdTime)"
+                    fields="files(id, name, createdTime)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
                 ).execute()
                 files = results.get('files', [])
                 if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
                 else:
                     supplier_files = {}
-                    
-                    # 💡 修復：雙引擎檔名辨識，找得出新上傳的檔案
                     def identify_sup(fname):
                         for s in list(HEADER_MAP.keys()):
                             if s in fname: return s
@@ -159,7 +160,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                     
                     files_to_scan = []
                     for sup, flist in supplier_files.items():
-                        # 處理 fallback 時間
                         for f in flist:
                             ctime = f.get('createdTime')
                             if ctime:
