@@ -6,7 +6,7 @@ import re
 
 # 👇 你的專屬密鑰已安全就位！
 NEW_SHEET_ID = "181Zx5T1OLwnE08uf86-_bi_FK22PwCfbuB_Pr7AG2rE"
-DRIVE_FOLDER_ID = "1w8e_TzqTwELTFgiSU1AEyulv3UyJKzXT"
+DRIVE_FOLDER_ID = "0AIplxVbt1LTaUk9PVA"
 
 SUPPLIERS = ["新興城", "金山洋行", "廣隆", "哲朗", "浩新", "一峰行", "恆盛", "萬安(遠東)"]
 
