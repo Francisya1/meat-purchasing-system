@@ -2,11 +2,22 @@ import streamlit as st
 import pandas as pd
 import re
 import io
+import datetime
 import pdfplumber
 from googleapiclient.http import MediaIoBaseDownload
 
 from modules.google_db import clean_string, get_drive_connection, DRIVE_FOLDER_ID
 from tabs.tab1_update import find_price_columns
+
+def extract_date_from_filename(filename):
+    # 從檔名中提取日期（如 2026-07-15 或 2026/07/15）用於絕對時間排序
+    match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', filename)
+    if match:
+        try:
+            return datetime.datetime.strptime(match.group(1).replace('/', '-'), '%Y-%m-%d')
+        except:
+            pass
+    return datetime.datetime.min
 
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
     with st.form("search_form"):
@@ -22,7 +33,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
         
-        # 💡 Phase 2: 智能切詞與雙向包含引擎
         for key, aliases in STATIC_DICT.items():
             if q_clean in aliases or q_clean in key or key in q_clean:
                 search_aliases.update(aliases)
@@ -111,11 +121,9 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
-                # 💡 強制要求 Google 雲端回傳「由新到舊」排序的檔案清單
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
-                    fields="files(id, name, createdTime)",
-                    orderBy="createdTime desc"
+                    fields="files(id, name, createdTime)"
                 ).execute()
                 files = results.get('files', [])
                 if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
@@ -127,8 +135,11 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
                     
-                    # 取出每個供應商「時間最新」的那一份報價單
-                    files_to_scan = [flist[0] for flist in supplier_files.values()] 
+                    # 💡 核心修正：針對每個供應商的檔案，根據「檔名裡的日期」由新到舊排序，強制取最新那份！
+                    files_to_scan = []
+                    for sup, flist in supplier_files.items():
+                        sorted_flist = sorted(flist, key=lambda x: extract_date_from_filename(x['name']), reverse=True)
+                        files_to_scan.append(sorted_flist[0])
                         
                     from modules.pdf_xray import parse_supplier_row, deep_decode_item
                     cloud_db = []
@@ -209,16 +220,13 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                                                 process_cloud_item(p_name, part[1], part[2], supplier, file['name'])
                     search_ph2.empty()
                     
-                    # 💡 使用 Dictionary 取代 Set，透過 UID 覆寫機制強制只保留一筆最新的產品資訊
                     filtered_cloud_dict = {}
                     for item in cloud_db:
                         if any(alias in item["search_string"] for alias in search_aliases) and (not selected_origins or item["產地"] in selected_origins):
-                            # 拔除價錢作為識別，確保同一規格的產品只會有一筆最新資料
                             uid = f"{item['供應商']}_{item['產地']}_{item['品牌']}_{item['品名(純)']}_{item['包裝規格']}"
                             filtered_cloud_dict[uid] = item
                             
                     if filtered_cloud_dict:
-                        # 將清理過後的 Dictionary 轉回 List 並按照價錢排序
                         df_cloud = pd.DataFrame(list(filtered_cloud_dict.values())).sort_values(by="換算價 ($/LB)")
                         
                         st.markdown("<h4 style='color:#1f77b4;'>🏆 雲端未建檔各品項最平：</h4>", unsafe_allow_html=True)
@@ -226,7 +234,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         col_idx_c = 0
                         
                         unique_cloud_items = df_cloud['品名(純)'].unique()
-                        for u_item in unique_cloud_items[:6]: # 最多顯示前6個不同產品
+                        for u_item in unique_cloud_items[:6]:
                             group = df_cloud[df_cloud['品名(純)'] == u_item]
                             cheapest_cloud = group.iloc[0]
                             with cols_c[col_idx_c % 3]:
@@ -236,6 +244,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                         
                         for _, row in df_cloud.iterrows():
-                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
