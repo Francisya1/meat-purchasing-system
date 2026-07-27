@@ -135,7 +135,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         if sup not in supplier_files: supplier_files[sup] = []
                         supplier_files[sup].append(f)
                     
-                    # 💡 核心修正：針對每個供應商的檔案，根據「檔名裡的日期」由新到舊排序，強制取最新那份！
                     files_to_scan = []
                     for sup, flist in supplier_files.items():
                         sorted_flist = sorted(flist, key=lambda x: extract_date_from_filename(x['name']), reverse=True)
@@ -244,6 +243,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                         
                         for _, row in df_cloud.iterrows():
-                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
+                            # 💡 修復處: {row['品名(純)']} 右側多出的 } 已移除
+                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
