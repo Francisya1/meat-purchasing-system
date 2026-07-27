@@ -129,17 +129,22 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                 
                 pdf_bytes = io.BytesIO(uploaded_file.read())
                 
-                # 💡 修復 1：關閉 resumable=True 避免靜默崩潰，並加上錯誤回報
+                # 💡 修復：加入 supportsAllDrives=True，支援共用雲端硬碟上傳
                 try:
                     drive_service = get_drive_connection()
                     pdf_bytes.seek(0)
                     new_filename = f"{selected_supplier}_{quote_date.strftime('%Y-%m-%d')}.pdf"
                     file_metadata = {'name': new_filename, 'parents': [DRIVE_FOLDER_ID]}
                     media = MediaIoBaseUpload(pdf_bytes, mimetype='application/pdf', resumable=False)
-                    drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+                    drive_service.files().create(
+                        body=file_metadata, 
+                        media_body=media, 
+                        fields='id',
+                        supportsAllDrives=True  # 👈 關鍵防呆解鎖
+                    ).execute()
                     st.toast(f"✅ 報價單已成功備份至雲端: {new_filename}")
                 except Exception as e: 
-                    st.error(f"⚠️ 雲端備份失敗，請聯絡開發者檢查權限設定：{e}")
+                    st.error(f"⚠️ 雲端備份失敗，請確認已設定『共用雲端硬碟』：{e}")
                 
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
