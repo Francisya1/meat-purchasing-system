@@ -9,7 +9,6 @@ from googleapiclient.http import MediaIoBaseDownload
 from modules.google_db import clean_string, get_drive_connection, DRIVE_FOLDER_ID
 from tabs.tab1_update import find_price_columns
 
-# 💡 全能時間萃取器 (支援所有日期格式 + 雲端時間 Fallback)
 def extract_date_from_filename(filename):
     match = re.search(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', filename)
     if match:
@@ -34,16 +33,13 @@ def extract_date_from_filename(filename):
     return datetime.datetime.min
 
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
-    with st.form("search_form"):
-        col_s1, col_s2, col_s3, col_s4 = st.columns([3, 2, 2, 1])
-        with col_s1: search_query = st.text_input("🔍 關鍵字 (如: 雞翼)：", placeholder="輸入產品...")
-        with col_s2: selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
-        with col_s3: category_filter = st.selectbox("🥩 肉類分類 (強制隔離)", ["全部", "Beef (牛)", "Pork (豬)", "Chicken (雞)", "Lamp (羊)"])
-        with col_s4: 
-            st.markdown("<br>", unsafe_allow_html=True)
-            submit_search = st.form_submit_button("🔍 搜尋", use_container_width=True)
+    # 💡 解除 st.form，讓搜尋結果成為「常駐狀態」，按鈕和勾選框才不會消失！
+    col_s1, col_s2, col_s3 = st.columns([3, 2, 2])
+    with col_s1: search_query = st.text_input("🔍 關鍵字 (輸入後按 Enter 搜尋)：", placeholder="例如: 牛展, 雞翼...")
+    with col_s2: selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
+    with col_s3: category_filter = st.selectbox("🥩 肉類分類 (強制隔離)", ["全部", "Beef (牛)", "Pork (豬)", "Chicken (雞)", "Lamp (羊)"])
 
-    if submit_search and search_query:
+    if search_query:
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
         
@@ -149,10 +145,10 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                     edited_cart = st.data_editor(
                         cart_df, 
                         column_config={"➕ 加入車內": st.column_config.CheckboxColumn("➕ 加入車內")}, 
-                        use_container_width=True, hide_index=True, key="cart_t1"
+                        use_container_width=True, hide_index=True, key="cart_t1_editor"
                     )
                     
-                    if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t1", type="primary"):
+                    if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t1_submit", type="primary"):
                         added = 0
                         for idx, row in edited_cart.iterrows():
                             if row["➕ 加入車內"]:
@@ -315,9 +311,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         for _, row in df_cloud.iterrows():
                             st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
 
-                        # =========================================
                         # 💡 報價車整合區 (Tab 2 底部)
-                        # =========================================
                         st.markdown("---")
                         st.markdown("<h3 style='color:#d9534f;'>🛒 勾選產品加入【報價計算車】</h3>", unsafe_allow_html=True)
                         
@@ -328,10 +322,10 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         edited_cart_cloud = st.data_editor(
                             cart_df_cloud, 
                             column_config={"➕ 加入車內": st.column_config.CheckboxColumn("➕ 加入車內")}, 
-                            use_container_width=True, hide_index=True, key="cart_t2"
+                            use_container_width=True, hide_index=True, key="cart_t2_editor"
                         )
                         
-                        if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t2", type="primary"):
+                        if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t2_submit", type="primary"):
                             added = 0
                             for idx, row in edited_cart_cloud.iterrows():
                                 if row["➕ 加入車內"]:
