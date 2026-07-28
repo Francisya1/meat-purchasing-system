@@ -20,7 +20,6 @@ if 'inbox_data' not in st.session_state: st.session_state['inbox_data'] = None
 if 'radar_sup' not in st.session_state: st.session_state['radar_sup'] = None
 if 'radar_date_str' not in st.session_state: st.session_state['radar_date_str'] = None
 if 'anomaly_data' not in st.session_state: st.session_state['anomaly_data'] = None
-# 💡 新增：報價計算車的記憶體
 if 'quote_cart' not in st.session_state: st.session_state['quote_cart'] = []
 
 # ==========================================
@@ -42,7 +41,7 @@ from tabs.tab1_update import render_tab1
 from tabs.tab2_search import render_tab2
 from tabs.tab3_analysis import render_tab3
 from tabs.tab4_admin import render_tab4
-from tabs.tab5_quote import render_tab5 # 💡 匯入全新的報價車模組
+from tabs.tab5_quote import render_tab5
 
 components.html(
     """
@@ -209,9 +208,14 @@ with st.sidebar:
             if len(row) >= 6:
                 if len(row) >= 7 and re.match(r'\d{4}-\d{2}-\d{2}', row[1]): latest_dates[row[2]] = row[1]
                 else: latest_dates[row[1]] = row[0].split()[0]
+        
+        # 💡 修復魔法印出的 Bug
         for sup in ACTIVE_SUPPLIERS:
             date_str = latest_dates.get(sup, "尚未更新")
-            st.success(f"**{sup}** : {date_str}") if date_str != "尚未更新" else st.warning(f"**{sup}** : {date_str}")
+            if date_str == "尚未更新":
+                st.warning(f"**{sup}** : {date_str}")
+            else:
+                st.success(f"**{sup}** : {date_str}")
             
     st.markdown("---")
     if st.button("🚪 登出系統", use_container_width=True):
@@ -221,13 +225,12 @@ with st.sidebar:
             except: pass
         st.session_state.clear()
         st.rerun()
-    st.caption("版本號: v32.0 (加入智能報價車)")
+    st.caption("版本號: v32.1 (解除魔法字串)")
 
-# 💡 分頁定義新增了 Tab 5
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)", "🛒 報價計算車"])
 
 with tab1: render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_history, get_wavy_loading_html)
 with tab2: render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html)
 with tab3: render_tab3(STATIC_DICT, cat_data, HEADER_MAP, parsed_history)
 with tab4: render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict, STATIC_DICT, get_wavy_loading_html)
-with tab5: render_tab5() # 💡 渲染報價車
+with tab5: render_tab5()
