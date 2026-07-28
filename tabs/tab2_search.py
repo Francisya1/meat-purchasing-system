@@ -32,8 +32,115 @@ def extract_date_from_filename(filename):
             except: pass
     return datetime.datetime.min
 
+# ==========================================
+# ⚡ 雲端快取記憶引擎 (Cache Engine)
+# ==========================================
+@st.cache_data(show_spinner=False, ttl=86400) # 記憶維持 24 小時
+def cached_parse_cloud_pdf(file_id, supplier, file_name):
+    drive_service = get_drive_connection()
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while not done: _, done = downloader.next_chunk()
+    fh.seek(0)
+    
+    cloud_db = []
+    from modules.pdf_xray import parse_supplier_row, deep_decode_item
+    with pdfplumber.open(fh) as pdf:
+        for page in pdf.pages:
+            lines = []
+            text = page.extract_text()
+            if text: lines.extend(text.split('\n'))
+            tables = page.extract_tables()
+            for table in tables:
+                for row in table:
+                    row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
+                    lines.append(row_str)
+            
+            if supplier == "形澧":
+                for line in lines:
+                    line = line.strip()
+                    if len(line) < 5: continue
+                    line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
+                    line = re.sub(r'\s*([*xX])\s*', r'\1', line)
+                    tokens = re.split(r'\s+|\|', line)
+                    raw_price = 0.0
+                    price_str_for_split = ""
+                    for token in reversed(tokens):
+                        tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
+                        if not tc: continue
+                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                        if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
+                        if re.match(r'^\d+(?:\.\d+)?$', tc):
+                            val = float(tc)
+                            if val > 0:
+                                raw_price = val
+                                price_str_for_split = token
+                                break
+                    if raw_price > 0:
+                        raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
+                        raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text).strip()
+                        raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
+                        clean_raw = clean_string(raw_name_text)
+                        if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue
+                        origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, str(raw_price), "")
+                        if price_lb and float(price_lb) > 0:
+                            cloud_db.append({
+                                "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                "換算價 ($/LB)": price_lb, "來源檔案": file_name, "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                            })
+            else:
+                for line in lines:
+                    matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', re.IGNORECASE)
+                    for match in matches:
+                        raw_name_text = match.group(1)
+                        price_str = match.group(2)
+                        unit_str = match.group(3) if match.group(3) else ""
+                        raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text).strip()
+                        raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
+                        clean_raw = clean_string(raw_name_text)
+                        if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue
+                        try:
+                            if float(price_str) <= 0.0: continue 
+                        except:
+                            if price_str == "清" or "sold" in str(price_str).lower(): continue
+                        origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, unit_str)
+                        if price_lb and float(price_lb) > 0:
+                            cloud_db.append({
+                                "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                "換算價 ($/LB)": price_lb, "來源檔案": file_name, "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                            })
+                            
+                for table in tables:
+                    for row in table:
+                        cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
+                        extracted_parts = parse_supplier_row(supplier, cells)
+                        for part in extracted_parts:
+                            p_name = part[0]
+                            if "@@@" in p_name: p_name = p_name.split("@@@")[0]
+                            price_str = part[1]
+                            unit_str = part[2]
+                            raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', p_name).strip()
+                            raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
+                            clean_raw = clean_string(raw_name_text)
+                            if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): continue
+                            try:
+                                if float(price_str) <= 0.0: continue 
+                            except:
+                                if price_str == "清" or "sold" in str(price_str).lower(): continue
+                            origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, unit_str)
+                            if price_lb and float(price_lb) > 0:
+                                cloud_db.append({
+                                    "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
+                                    "換算價 ($/LB)": price_lb, "來源檔案": file_name, "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
+                                })
+    return cloud_db
+
+# ==========================================
+# 🔍 渲染搜尋主畫面
+# ==========================================
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
-    # 💡 解除 st.form，讓搜尋結果成為「常駐狀態」，按鈕和勾選框才不會消失！
     col_s1, col_s2, col_s3 = st.columns([3, 2, 2])
     with col_s1: search_query = st.text_input("🔍 關鍵字 (輸入後按 Enter 搜尋)：", placeholder="例如: 牛展, 雞翼...")
     with col_s2: selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
@@ -101,7 +208,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             
             if compare_results:
                 df_compare = pd.DataFrame(compare_results).sort_values(by="sort_price")
-                
                 st.markdown("<h4 style='color:#1f77b4;'>🏆 各品項最低報價：</h4>", unsafe_allow_html=True)
                 cols_b = st.columns(3)
                 col_idx = 0
@@ -117,56 +223,34 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         
                 st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                 
-                # 印出所有卡片
-                for _, row in df_compare.iterrows():
-                    is_soldout_card = (row['每磅均價 ($/LB)'] == "Sold out")
-                    card_class = "product-card sold-out-card" if is_soldout_card else "product-card"
-                    price_class = "product-card-price sold-out-price" if is_soldout_card else "product-card-price"
-                    
-                    badge_class = "badge badge-danger" if is_soldout_card else "badge"
+                # 💡 內排行內購物車按鈕
+                for idx, row in df_compare.iterrows():
+                    is_soldout = (row['每磅均價 ($/LB)'] == "Sold out")
+                    card_class = "product-card sold-out-card" if is_soldout else "product-card"
+                    price_class = "product-card-price sold-out-price" if is_soldout else "product-card-price"
+                    badge_class = "badge badge-danger" if is_soldout else "badge"
                     alert_html = f"<span class='{badge_class}'>{row['歷史低價提醒']}</span>" if row['歷史低價提醒'] else ""
+                    price_display = "Sold out 斷貨" if is_soldout else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     
-                    price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
-                    st.markdown(f"<div class='{card_class}'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='{price_class}'>{price_display}</span>{alert_html}</div></div>", unsafe_allow_html=True)
-
-                # =========================================
-                # 💡 報價車整合區 (Tab 1 底部)
-                # =========================================
-                valid_items = df_compare[df_compare['每磅均價 ($/LB)'] != "Sold out"].copy()
-                if not valid_items.empty:
-                    st.markdown("---")
-                    st.markdown("<h3 style='color:#d9534f;'>🛒 勾選產品加入【報價計算車】</h3>", unsafe_allow_html=True)
-                    st.write("在下方清單打勾，然後點擊按鈕，系統會自動幫你帶入成本並送到 Tab 5 進行毛利運算！")
-                    
-                    cart_df = valid_items[['供應商', '標準品名', '產地', 'sort_price']].copy()
-                    cart_df.rename(columns={'標準品名': '產品名稱', 'sort_price': '成本($)'}, inplace=True)
-                    cart_df.insert(0, "➕ 加入車內", False)
-                    
-                    edited_cart = st.data_editor(
-                        cart_df, 
-                        column_config={"➕ 加入車內": st.column_config.CheckboxColumn("➕ 加入車內")}, 
-                        use_container_width=True, hide_index=True, key="cart_t1_editor"
-                    )
-                    
-                    if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t1_submit", type="primary"):
-                        added = 0
-                        for idx, row in edited_cart.iterrows():
-                            if row["➕ 加入車內"]:
+                    col_card, col_btn = st.columns([5, 1])
+                    with col_card:
+                        st.markdown(f"<div class='{card_class}'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='{price_class}'>{price_display}</span>{alert_html}</div></div>", unsafe_allow_html=True)
+                    with col_btn:
+                        st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
+                        if not is_soldout:
+                            if st.button("🛒 加入車內", key=f"t1_add_{idx}"):
                                 st.session_state['quote_cart'].append({
-                                    "supplier": row["供應商"], "name": row["產品名稱"], "cost": float(row["成本($)"]),
+                                    "supplier": row["供應商"], "name": row["標準品名"], "cost": float(row["每磅均價 ($/LB)"]),
                                     "mode": "設定利潤(%)算售價", "input_val": 12.0, "final_price": 0.0, "profit_dollar": 0.0, "profit_pct": 0.0, "note": f"產地:{row['產地']}"
                                 })
-                                added += 1
-                        if added > 0:
-                            st.success(f"✅ 成功加入 {added} 件產品！請前往上方「🛒 報價計算車」分頁查看與計算。")
-
+                                st.toast(f"✅ 【{row['供應商']}】的 {row['標準品名']} 已加入報價車！")
             else: st.warning("🔍 沒找到符合條件的報價。")
 
         # ==========================================
         # ☁️ Sub-Tab 2: 所有供應商中尋找 (雲端)
         # ==========================================
         with sub_tab2:
-            st.info("💡 提示：雲端盲掃模式因沒有預先設定的分類，搜尋將會比對所有找到的內容。")
+            st.info("💡 雲端快取模式已啟動：首次搜尋較慢，後續搜尋將瞬間完成！")
             search_ph2 = st.empty()
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
@@ -174,8 +258,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
                     fields="files(id, name, createdTime)",
-                    supportsAllDrives=True,
-                    includeItemsFromAllDrives=True
+                    supportsAllDrives=True, includeItemsFromAllDrives=True
                 ).execute()
                 files = results.get('files', [])
                 if not files: search_ph2.empty(); st.warning("資料夾內沒有 PDF。")
@@ -202,87 +285,16 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                                 try: f['fallback_time'] = datetime.datetime.strptime(ctime.split('.')[0].replace('Z',''), "%Y-%m-%dT%H:%M:%S")
                                 except: f['fallback_time'] = datetime.datetime.min
                             else: f['fallback_time'] = datetime.datetime.min
-                            
                         sorted_flist = sorted(flist, key=lambda x: extract_date_from_filename(x['name']) if extract_date_from_filename(x['name']) != datetime.datetime.min else x['fallback_time'], reverse=True)
                         files_to_scan.append(sorted_flist[0])
                         
-                    from modules.pdf_xray import parse_supplier_row, deep_decode_item
                     cloud_db = []
-                    
-                    def process_cloud_item(raw_name_text, price_str, unit_str, supplier, file_name):
-                        raw_name_text = re.sub(r'^(抄碼|\d+(\.\d+)?[Kk][Gg]?)\s*', '', raw_name_text).strip()
-                        raw_name_text = re.sub(r'[\$\s/\|]+$', '', raw_name_text).strip()
-                        clean_raw = clean_string(raw_name_text)
-                        if len(clean_raw) < 2 or not re.search(r'[\u4e00-\u9fa5]', raw_name_text): return
-                        
-                        try:
-                            p_float = float(price_str)
-                            if p_float <= 0.0: return 
-                        except:
-                            if price_str == "清" or "sold" in str(price_str).lower(): return
-                            
-                        origin, brand, clean_pname, spec, unit, price_lb, price_kg = deep_decode_item(raw_name_text, price_str, unit_str)
-                        if price_lb and float(price_lb) > 0:
-                            cloud_db.append({
-                                "供應商": supplier, "產地": origin, "品牌": brand, "品名(純)": clean_pname, "包裝規格": spec,
-                                "換算價 ($/LB)": price_lb, "來源檔案": file_name, "search_string": f"{origin} {brand} {clean_pname} {supplier}".lower().replace(' ', '')
-                            })
-                    
-                    for idx, file in enumerate(files_to_scan):
+                    # 💡 呼叫雲端快取記憶引擎 (0.5秒閃電讀取)
+                    for file in files_to_scan:
                         supplier = identify_sup(file['name'])
-                        request = drive_service.files().get_media(fileId=file['id'])
-                        fh = io.BytesIO(); downloader = MediaIoBaseDownload(fh, request)
-                        done = False
-                        while not done: _, done = downloader.next_chunk()
-                        fh.seek(0)
+                        parsed_items = cached_parse_cloud_pdf(file['id'], supplier, file['name'])
+                        cloud_db.extend(parsed_items)
                         
-                        with pdfplumber.open(fh) as pdf:
-                            for page in pdf.pages:
-                                lines = []
-                                text = page.extract_text()
-                                if text: lines.extend(text.split('\n'))
-                                tables = page.extract_tables()
-                                for table in tables:
-                                    for row in table:
-                                        row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
-                                        lines.append(row_str)
-                                
-                                if supplier == "形澧":
-                                    for line in lines:
-                                        line = line.strip()
-                                        if len(line) < 5: continue
-                                        line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', line, flags=re.IGNORECASE)
-                                        line = re.sub(r'\s*([*xX])\s*', r'\1', line)
-                                        tokens = re.split(r'\s+|\|', line)
-                                        raw_price = 0.0
-                                        price_str_for_split = ""
-                                        for token in reversed(tokens):
-                                            tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
-                                            if not tc: continue
-                                            if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
-                                            if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
-                                            if re.match(r'^\d+(?:\.\d+)?$', tc):
-                                                val = float(tc)
-                                                if val > 0:
-                                                    raw_price = val
-                                                    price_str_for_split = token
-                                                    break
-                                        if raw_price > 0:
-                                            raw_name_text = line.rsplit(price_str_for_split, 1)[0].strip()
-                                            process_cloud_item(raw_name_text, str(raw_price), "", supplier, file['name'])
-                                else:
-                                    for line in lines:
-                                        matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
-                                        for match in matches:
-                                            process_cloud_item(match.group(1), match.group(2), match.group(3) if match.group(3) else "", supplier, file['name'])
-                                    for table in tables:
-                                        for row in table:
-                                            cells = [str(cell).replace('\n', '').strip() if cell else "" for cell in row]
-                                            extracted_parts = parse_supplier_row(supplier, cells)
-                                            for part in extracted_parts:
-                                                p_name = part[0]
-                                                if "@@@" in p_name: p_name = p_name.split("@@@")[0]
-                                                process_cloud_item(p_name, part[1], part[2], supplier, file['name'])
                     search_ph2.empty()
                     
                     filtered_cloud_dict = {}
@@ -308,34 +320,18 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         
                         st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                         
-                        for _, row in df_cloud.iterrows():
-                            st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
-
-                        # 💡 報價車整合區 (Tab 2 底部)
-                        st.markdown("---")
-                        st.markdown("<h3 style='color:#d9534f;'>🛒 勾選產品加入【報價計算車】</h3>", unsafe_allow_html=True)
-                        
-                        cart_df_cloud = df_cloud[['供應商', '品名(純)', '產地', '換算價 ($/LB)']].copy()
-                        cart_df_cloud.rename(columns={'品名(純)': '產品名稱', '換算價 ($/LB)': '成本($)'}, inplace=True)
-                        cart_df_cloud.insert(0, "➕ 加入車內", False)
-                        
-                        edited_cart_cloud = st.data_editor(
-                            cart_df_cloud, 
-                            column_config={"➕ 加入車內": st.column_config.CheckboxColumn("➕ 加入車內")}, 
-                            use_container_width=True, hide_index=True, key="cart_t2_editor"
-                        )
-                        
-                        if st.button("🛍️ 確定將勾選產品送入報價車", key="btn_cart_t2_submit", type="primary"):
-                            added = 0
-                            for idx, row in edited_cart_cloud.iterrows():
-                                if row["➕ 加入車內"]:
+                        # 💡 內排行內購物車按鈕
+                        for idx, row in df_cloud.iterrows():
+                            col_c, col_b = st.columns([5, 1])
+                            with col_c:
+                                st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
+                            with col_b:
+                                st.markdown("<div style='margin-top: 30px;'></div>", unsafe_allow_html=True)
+                                if st.button("🛒 加入車內", key=f"t2_add_{idx}"):
                                     st.session_state['quote_cart'].append({
-                                        "supplier": row["供應商"], "name": row["產品名稱"], "cost": float(row["成本($)"]),
+                                        "supplier": row["供應商"], "name": row["品名(純)"], "cost": float(row["換算價 ($/LB)"]),
                                         "mode": "設定利潤(%)算售價", "input_val": 12.0, "final_price": 0.0, "profit_dollar": 0.0, "profit_pct": 0.0, "note": f"產地:{row['產地']}"
                                     })
-                                    added += 1
-                            if added > 0:
-                                st.success(f"✅ 成功加入 {added} 件產品！請前往上方「🛒 報價計算車」分頁查看與計算。")
-
+                                    st.toast(f"✅ 【{row['供應商']}】的 {row['品名(純)']} 已加入報價車！")
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
