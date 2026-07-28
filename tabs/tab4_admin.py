@@ -18,6 +18,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
     st.error("⚠️ **警告：此區塊為系統管理員與開發者專用。** 一般同事請勿操作，以免影響系統資料庫。")
     
     all_db_options = ["請選擇對應產品..."]
+    sku_std_map = {} # 建立 SKU 與品名的對照表
     for sn, vals in cat_data.items():
         if vals and len(vals) > 2:
             for r in vals[2:]:
@@ -26,6 +27,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                 if not sku: continue
                 std_name = " ".join([str(r[i]).strip() for i in range(1, min(6, len(r))) if str(r[i]).strip()])
                 all_db_options.append(f"[{sku}] {std_name}")
+                sku_std_map[sku] = std_name
 
     st.markdown("### 📡 Phase 3: 智能新品雷達 (Inbox)")
     st.write("上傳一份報價單，系統將自動比對現有 Mapping 與黑名單，把「未追蹤的全新產品」全部挖出來。確認無誤後，系統會幫你同步建立 Mapping 與寫入最新價錢！")
@@ -46,7 +48,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
         
         pdf_bytes = io.BytesIO(radar_file.read())
         
-        # 💡 Phase 3 雲端智能覆寫機制
         new_filename = f"{radar_sup}_{radar_date.strftime('%Y-%m-%d')}.pdf"
         try:
             drive_service = get_drive_connection()
@@ -275,7 +276,7 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                         "供應商": sup, "報價單原文": info['raw'], "原綁定 SKU": f"[{sku}] {std_name}",
                                         "該行平均價": avg_p, "異常價錢": p, "系統判定": status,
                                         "🔄 重新綁定至 (新SKU)": "請選擇對應產品...",
-                                        "✏️ 手動修正價(LB)": None, # 💡 支援手動改價
+                                        "✏️ 手動修正價(LB)": None,
                                         "excel_row": info['row'], "pure_sku": sku
                                     })
         loading_ph6.empty()
@@ -325,7 +326,6 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                                 pure_sku = match.group(1)
                                 cells_to_update.append({'range': gspread.utils.rowcol_to_a1(int(target_row), 3), 'values': [[pure_sku]]})
 
-                        # 💡 處理手動改價
                         new_price = row.get("✏️ 手動修正價(LB)")
                         if pd.notna(new_price) and float(new_price) > 0:
                             v_lb = float(new_price); v_kg = round(v_lb * 2.2046, 1); sup = row["供應商"]
@@ -354,59 +354,99 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
             else: loading_ph7.empty(); st.warning("⚠️ 沒有勾選任何操作項目或無有效填寫。")
 
     # ==========================================
-    # 💡 終極解法: Phase 5 全庫 Mapping 總覽與強制修正
+    # 💡 雙核心引擎: Phase 5 深度 Mapping 總管
     # ==========================================
     st.markdown("---")
-    st.markdown("### 🗂️ Phase 5: 全庫 Mapping 總覽與強制編輯")
-    st.write("如果你發現某個產品價錢沒異常，但就是綁錯了，可以在這裡直接搜尋並一鍵修正或刪除！")
+    st.markdown("### 🗂️ Phase 5: 深度 Mapping 總管")
+    st.write("手動逐條檢查太沒效率了！系統現在提供「AI 語意邏輯巡邏」幫你自動抓出牛頭不對馬嘴的綁定，以及「手動全庫搜尋」供你隨時精確打擊。")
     
-    search_kw = st.text_input("🔍 搜尋 Mapping (請輸入供應商、原文或 SKU 的部分關鍵字)...", placeholder="例如: 廣隆, 雞翼, 3010")
+    tab5_1, tab5_2 = st.tabs(["🤖 AI 語意錯綁偵測 (自動巡邏)", "🔍 手動全庫搜尋 (精確打擊)"])
     
-    if search_kw.strip():
-        gc, sh, _ = get_google_connection()
-        try: all_maps_raw = sh.worksheet('Mapping').get_all_records()
-        except: all_maps_raw = []
-        
-        filtered_maps = []
-        for idx, r in enumerate(all_maps_raw):
-            sup = str(r.get('供應商','')).strip()
-            raw = str(r.get('供應商原文','')).strip()
-            sku = str(r.get('對應SKU','')).strip()
-            kw_low = search_kw.lower()
-            if kw_low in sup.lower() or kw_low in raw.lower() or kw_low in sku.lower():
-                filtered_maps.append({
-                    "🗑️ 刪除": False, "✔️ 修正 SKU": False,
-                    "供應商": sup, "報價單原文": raw, "目前綁定 SKU": sku,
-                    "🔄 修改為 (新SKU)": "請選擇對應產品...",
-                    "excel_row": idx + 2
-                })
+    with tab5_1:
+        st.info("💡 **自動巡邏原理：** 系統會拆解母表品名與供應商原文的關鍵字。如果發現兩者「字面意思毫無關聯」（例如把『雞翼』綁到了『西冷』），就會自動將其揪出！")
+        if st.button("🚀 執行 AI 語意巡邏", use_container_width=True):
+            p5_loading1 = st.empty(); p5_loading1.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            gc, sh, _ = get_google_connection()
+            try: mapping_data_raw = sh.worksheet('Mapping').get_all_records()
+            except: mapping_data_raw = []
+            
+            suspicious_semantic = []
+            stop_chars = set("巴西美國澳洲紐西蘭中國阿根廷日本急凍冷藏新鮮廠牌kglb磅件箱x*1234567890. -/")
+            
+            for idx, row in enumerate(mapping_data_raw):
+                excel_row = idx + 2
+                sup = str(row.get('供應商','')).strip()
+                raw = str(row.get('供應商原文','')).strip()
+                sku = str(row.get('對應SKU','')).strip()
+
+                std_name = sku_std_map.get(sku, "")
+                if not std_name: continue
+
+                clean_raw = clean_string(raw).lower()
+                clean_std = clean_string(std_name).lower()
+                is_sus = False; reason = ""
+
+                # 測試一：STATIC_DICT 關鍵字強制關聯測試
+                found_main_keys = [(k, aliases) for k, aliases in STATIC_DICT.items() if k in clean_std or any(a in clean_std for a in aliases)]
                 
-        if filtered_maps:
-            df_full_map = pd.DataFrame(filtered_maps)
-            edited_full_map = st.data_editor(
-                df_full_map,
+                if found_main_keys:
+                    passed = False
+                    for k, aliases in found_main_keys:
+                        if k in clean_raw or any(a in clean_raw for a in aliases):
+                            passed = True; break
+                    if not passed:
+                        is_sus = True; reason = "關鍵字完全不符 (語意衝突)"
+                else:
+                    # 測試二：無字彙表產品，進行文字重疊率測試 (排除無用字眼)
+                    set_std = set(clean_std) - stop_chars
+                    set_raw = set(clean_raw) - stop_chars
+                    if set_std and set_raw and len(set_std & set_raw) == 0:
+                        is_sus = True; reason = "零文字重疊 (疑似錯綁)"
+
+                if is_sus:
+                    suspicious_semantic.append({
+                        "🗑️ 刪除": False, "✔️ 修正 SKU": False,
+                        "供應商": sup, "報價單原文": raw, "原綁定 SKU": f"[{sku}] {std_name}",
+                        "系統判定": f"🚨 {reason}",
+                        "🔄 重新綁定至 (新SKU)": "請選擇對應產品...",
+                        "excel_row": excel_row
+                    })
+                    
+            p5_loading1.empty()
+            if suspicious_semantic:
+                st.warning(f"⚠️ 發現 {len(suspicious_semantic)} 筆疑似語意錯綁的紀錄！")
+                st.session_state['semantic_data'] = suspicious_semantic
+            else:
+                st.success("✅ 巡邏完成！系統認為目前的 Mapping 語意都很合理！")
+                st.session_state['semantic_data'] = None
+
+        if st.session_state.get('semantic_data'):
+            edited_sem = st.data_editor(
+                pd.DataFrame(st.session_state['semantic_data']),
                 column_config={
                     "🗑️ 刪除": st.column_config.CheckboxColumn("🗑️ 刪除"),
                     "✔️ 修正 SKU": st.column_config.CheckboxColumn("✔️ 修正 SKU"),
                     "供應商": st.column_config.TextColumn(disabled=True),
                     "報價單原文": st.column_config.TextColumn(disabled=True),
-                    "目前綁定 SKU": st.column_config.TextColumn(disabled=True),
-                    "🔄 修改為 (新SKU)": st.column_config.SelectboxColumn("🔄 修改為 (新SKU)", options=all_db_options),
+                    "原綁定 SKU": st.column_config.TextColumn(disabled=True),
+                    "系統判定": st.column_config.TextColumn(disabled=True),
+                    "🔄 重新綁定至 (新SKU)": st.column_config.SelectboxColumn("🔄 重新綁定至 (新SKU)", options=all_db_options),
                     "excel_row": None
                 },
-                use_container_width=True, hide_index=True, height=min(500, len(filtered_maps)*40 + 40)
+                use_container_width=True, hide_index=True, height=400
             )
             
-            if st.button("💾 執行操作 (套用至全庫)", type="primary", key="fix_full_map"):
-                p5_loading = st.empty(); p5_loading.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+            if st.button("💾 執行操作 (套用至巡邏結果)", type="primary", key="fix_sem_map"):
+                p5_loading2 = st.empty(); p5_loading2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+                gc, sh, _ = get_google_connection()
                 map_ws = sh.worksheet('Mapping')
                 c_upd = []; r_del = []
-                for idx, row in edited_full_map.iterrows():
+                for idx, row in edited_sem.iterrows():
                     is_d = row.get("🗑️ 刪除", False); is_f = row.get("✔️ 修正 SKU", False); tr = row.get("excel_row", -1)
                     if tr != -1:
                         if is_d: r_del.append(int(tr))
                         elif is_f:
-                            ns = row.get("🔄 修改為 (新SKU)", "")
+                            ns = row.get("🔄 重新綁定至 (新SKU)", "")
                             if "請選擇" not in ns and ns.strip():
                                 m = re.search(r'\[(.*?)\]', ns)
                                 if m: c_upd.append({'range': gspread.utils.rowcol_to_a1(int(tr), 3), 'values': [[m.group(1)]]})
@@ -415,10 +455,60 @@ def render_tab4(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, ignore_dict
                 if c_upd: map_ws.batch_update(c_upd)
                 
                 if r_del or c_upd:
-                    fetch_all_google_data.clear(); p5_loading.empty(); st.balloons()
+                    fetch_all_google_data.clear(); p5_loading2.empty(); st.balloons()
                     st.success(f"🎉 成功刪除 {len(r_del)} 筆 / 修正 {len(c_upd)} 筆 Mapping！"); time.sleep(2.5); st.rerun()
-                else: p5_loading.empty(); st.warning("⚠️ 沒有勾選任何操作項目。")
-        else: st.info(f"找不到與 `{search_kw}` 相關的 Mapping 紀錄。")
+                else: p5_loading2.empty(); st.warning("⚠️ 沒有勾選任何操作項目。")
+
+    with tab5_2:
+        search_kw = st.text_input("🔍 手動搜尋 Mapping (請輸入供應商、原文或 SKU 的部分關鍵字)...", placeholder="例如: 廣隆, 雞翼, 3010")
+        if search_kw.strip():
+            gc, sh, _ = get_google_connection()
+            try: all_maps_raw = sh.worksheet('Mapping').get_all_records()
+            except: all_maps_raw = []
+            
+            filtered_maps = []
+            for idx, r in enumerate(all_maps_raw):
+                sup = str(r.get('供應商','')).strip(); raw = str(r.get('供應商原文','')).strip(); sku = str(r.get('對應SKU','')).strip()
+                kw_low = search_kw.lower()
+                if kw_low in sup.lower() or kw_low in raw.lower() or kw_low in sku.lower():
+                    filtered_maps.append({
+                        "🗑️ 刪除": False, "✔️ 修正 SKU": False,
+                        "供應商": sup, "報價單原文": raw, "目前綁定 SKU": f"[{sku}] {sku_std_map.get(sku, '')}",
+                        "🔄 修改為 (新SKU)": "請選擇對應產品...", "excel_row": idx + 2
+                    })
+                    
+            if filtered_maps:
+                edited_full_map = st.data_editor(
+                    pd.DataFrame(filtered_maps),
+                    column_config={
+                        "🗑️ 刪除": st.column_config.CheckboxColumn("🗑️ 刪除"), "✔️ 修正 SKU": st.column_config.CheckboxColumn("✔️ 修正 SKU"),
+                        "供應商": st.column_config.TextColumn(disabled=True), "報價單原文": st.column_config.TextColumn(disabled=True), "目前綁定 SKU": st.column_config.TextColumn(disabled=True),
+                        "🔄 修改為 (新SKU)": st.column_config.SelectboxColumn("🔄 修改為 (新SKU)", options=all_db_options), "excel_row": None
+                    },
+                    use_container_width=True, hide_index=True, height=min(500, len(filtered_maps)*40 + 40)
+                )
+                
+                if st.button("💾 執行操作 (套用至搜尋結果)", type="primary", key="fix_full_map"):
+                    p5_loading3 = st.empty(); p5_loading3.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
+                    map_ws = sh.worksheet('Mapping')
+                    c_upd = []; r_del = []
+                    for idx, row in edited_full_map.iterrows():
+                        is_d = row.get("🗑️ 刪除", False); is_f = row.get("✔️ 修正 SKU", False); tr = row.get("excel_row", -1)
+                        if tr != -1:
+                            if is_d: r_del.append(int(tr))
+                            elif is_f:
+                                ns = row.get("🔄 修改為 (新SKU)", "")
+                                if "請選擇" not in ns and ns.strip():
+                                    m = re.search(r'\[(.*?)\]', ns)
+                                    if m: c_upd.append({'range': gspread.utils.rowcol_to_a1(int(tr), 3), 'values': [[m.group(1)]]})
+                                    
+                    for r in sorted(list(set(r_del)), reverse=True): map_ws.delete_rows(r)
+                    if c_upd: map_ws.batch_update(c_upd)
+                    if r_del or c_upd:
+                        fetch_all_google_data.clear(); p5_loading3.empty(); st.balloons()
+                        st.success(f"🎉 成功刪除 {len(r_del)} 筆 / 修正 {len(c_upd)} 筆 Mapping！"); time.sleep(2.5); st.rerun()
+                    else: p5_loading3.empty(); st.warning("⚠️ 沒有勾選任何操作項目。")
+            else: st.info(f"找不到與 `{search_kw}` 相關的 Mapping 紀錄。")
 
     st.markdown("---")
     st.markdown("### 🩺 Phase 1: Mapping 母表健康體檢")
