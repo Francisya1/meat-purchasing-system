@@ -126,6 +126,32 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                     
                     price_display = "Sold out 斷貨" if is_soldout_card else f"${row['每磅均價 ($/LB)']:.1f} / LB"
                     st.markdown(f"<div class='{card_class}'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['標準品名']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | SKU: {row['SKU']}</div><div class='product-card-price-row'><span class='{price_class}'>{price_display}</span>{alert_html}</div></div>", unsafe_allow_html=True)
+
+                # =========================================
+                # 💡 報價車整合區 (Tab 1)
+                # =========================================
+                valid_items = df_compare[df_compare['每磅均價 ($/LB)'] != "Sold out"].copy()
+                if not valid_items.empty:
+                    st.markdown("---")
+                    st.markdown("### 🛒 加入報價計算車")
+                    st.write("在下方勾選你想要報價給餐廳的產品，然後按下按鈕即可統一計算利潤！")
+                    cart_df = valid_items[['供應商', '標準品名', '產地', 'sort_price']].copy()
+                    cart_df.rename(columns={'標準品名': '產品名稱', 'sort_price': '成本($)'}, inplace=True)
+                    cart_df.insert(0, "➕ 加入", False)
+                    
+                    edited_cart = st.data_editor(cart_df, column_config={"➕ 加入": st.column_config.CheckboxColumn("➕ 加入")}, use_container_width=True, hide_index=True, key="cart_t1")
+                    if st.button("🛍️ 將勾選的產品加入報價車", key="btn_cart_t1", type="primary"):
+                        added = 0
+                        for idx, row in edited_cart.iterrows():
+                            if row["➕ 加入"]:
+                                st.session_state['quote_cart'].append({
+                                    "supplier": row["供應商"], "name": row["產品名稱"], "cost": float(row["成本($)"]),
+                                    "mode": "設定利潤(%)算售價", "input_val": 12.0, "final_price": 0.0, "profit_dollar": 0.0, "profit_pct": 0.0, "note": ""
+                                })
+                                added += 1
+                        if added > 0:
+                            st.success(f"✅ 成功加入 {added} 件產品！請前往上方「🛒 報價計算車」分頁查看。")
+
             else: st.warning("🔍 沒找到符合條件的報價。")
 
         with sub_tab2:
@@ -134,7 +160,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
             search_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
             try:
                 drive_service = get_drive_connection()
-                # 💡 修復：加入 supportsAllDrives=True，支援共用雲端硬碟搜尋
                 results = drive_service.files().list(
                     q=f"'{DRIVE_FOLDER_ID}' in parents and mimeType='application/pdf' and trashed=false",
                     fields="files(id, name, createdTime)",
@@ -274,5 +299,28 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         
                         for _, row in df_cloud.iterrows():
                             st.markdown(f"<div class='product-card'><div class='product-card-header'><span class='product-card-title'>【{row['供應商']}】 {row['品名(純)']}</span></div><div class='product-card-body'>產地: <span style='color:#0066cc; font-weight:bold;'>{row['產地']}</span> | 規格: {row['包裝規格']} | 品牌: {row['品牌']}<br><span style='font-size:10px; color:#888888 !important;'>來源檔: {row['來源檔案']}</span></div><div class='product-card-price-row'><span class='product-card-price'>${row['換算價 ($/LB)']:.1f} / LB</span></div></div>", unsafe_allow_html=True)
+
+                        # =========================================
+                        # 💡 報價車整合區 (Tab 2 雲端)
+                        # =========================================
+                        st.markdown("---")
+                        st.markdown("### 🛒 加入報價計算車")
+                        cart_df_cloud = df_cloud[['供應商', '品名(純)', '產地', '換算價 ($/LB)']].copy()
+                        cart_df_cloud.rename(columns={'品名(純)': '產品名稱', '換算價 ($/LB)': '成本($)'}, inplace=True)
+                        cart_df_cloud.insert(0, "➕ 加入", False)
+                        
+                        edited_cart_cloud = st.data_editor(cart_df_cloud, column_config={"➕ 加入": st.column_config.CheckboxColumn("➕ 加入")}, use_container_width=True, hide_index=True, key="cart_t2")
+                        if st.button("🛍️ 將勾選的產品加入報價車", key="btn_cart_t2", type="primary"):
+                            added = 0
+                            for idx, row in edited_cart_cloud.iterrows():
+                                if row["➕ 加入"]:
+                                    st.session_state['quote_cart'].append({
+                                        "supplier": row["供應商"], "name": row["產品名稱"], "cost": float(row["成本($)"]),
+                                        "mode": "設定利潤(%)算售價", "input_val": 12.0, "final_price": 0.0, "profit_dollar": 0.0, "profit_pct": 0.0, "note": ""
+                                    })
+                                    added += 1
+                            if added > 0:
+                                st.success(f"✅ 成功加入 {added} 件產品！請前往上方「🛒 報價計算車」分頁查看。")
+
                     else: st.warning(f"ℹ️ 在雲端未建檔的情報中，沒找到與 `{search_query}` 相關的產品。")
             except Exception as e: search_ph2.empty(); st.error(f"雲端解剖失敗：{e}")
