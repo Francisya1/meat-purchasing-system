@@ -129,22 +129,28 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                 
                 pdf_bytes = io.BytesIO(uploaded_file.read())
                 
-                # 💡 修復：加入 supportsAllDrives=True，支援共用雲端硬碟上傳
+                new_filename = f"{selected_supplier}_{quote_date.strftime('%Y-%m-%d')}.pdf"
                 try:
                     drive_service = get_drive_connection()
                     pdf_bytes.seek(0)
-                    new_filename = f"{selected_supplier}_{quote_date.strftime('%Y-%m-%d')}.pdf"
-                    file_metadata = {'name': new_filename, 'parents': [DRIVE_FOLDER_ID]}
+                    
+                    # 💡 雲端智能覆寫機制 (Overwrite)
+                    query = f"name='{new_filename}' and '{DRIVE_FOLDER_ID}' in parents and trashed=false"
+                    existing_files = drive_service.files().list(q=query, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute().get('files', [])
+                    
                     media = MediaIoBaseUpload(pdf_bytes, mimetype='application/pdf', resumable=False)
-                    drive_service.files().create(
-                        body=file_metadata, 
-                        media_body=media, 
-                        fields='id',
-                        supportsAllDrives=True  # 👈 關鍵防呆解鎖
-                    ).execute()
-                    st.toast(f"✅ 報價單已成功備份至雲端: {new_filename}")
-                except Exception as e: 
-                    st.error(f"⚠️ 雲端備份失敗，請確認已設定『共用雲端硬碟』：{e}")
+                    
+                    if existing_files:
+                        file_id = existing_files[0]['id']
+                        drive_service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
+                        st.toast(f"🔄 發現同日檔案，已成功【覆蓋更新】雲端報價單: {new_filename}")
+                    else:
+                        file_metadata = {'name': new_filename, 'parents': [DRIVE_FOLDER_ID]}
+                        drive_service.files().create(body=file_metadata, media_body=media, fields='id', supportsAllDrives=True).execute()
+                        st.toast(f"✅ 報價單已成功自動備份至雲端: {new_filename}")
+                        
+                except Exception as e:
+                    st.warning(f"💡 **溫馨提示：** 系統已成功解析價錢！但無法自動將 PDF 存入雲端。請將 `{new_filename}` 手動拖曳到你的 Google Drive 資料夾中。", icon="ℹ️")
                 
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
