@@ -35,7 +35,7 @@ def extract_date_from_filename(filename):
 # ==========================================
 # ⚡ 雲端快取記憶引擎 (Cache Engine)
 # ==========================================
-@st.cache_data(show_spinner=False, ttl=86400) # 記憶維持 24 小時
+@st.cache_data(show_spinner=False, ttl=86400)
 def cached_parse_cloud_pdf(file_id, supplier, file_name):
     drive_service = get_drive_connection()
     request = drive_service.files().get_media(fileId=file_id)
@@ -92,7 +92,8 @@ def cached_parse_cloud_pdf(file_id, supplier, file_name):
                             })
             else:
                 for line in lines:
-                    matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', re.IGNORECASE)
+                    # 💡 修復 RegexFlag 錯誤，加入 line 變數
+                    matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
                     for match in matches:
                         raw_name_text = match.group(1)
                         price_str = match.group(2)
@@ -141,11 +142,16 @@ def cached_parse_cloud_pdf(file_id, supplier, file_name):
 # 🔍 渲染搜尋主畫面
 # ==========================================
 def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_history, FILENAME_MAPPING, get_wavy_loading_html):
-    col_s1, col_s2, col_s3 = st.columns([3, 2, 2])
-    with col_s1: search_query = st.text_input("🔍 關鍵字 (輸入後按 Enter 搜尋)：", placeholder="例如: 牛展, 雞翼...")
+    # 💡 按鈕回歸！而且移除了 st.form，讓按鈕與畫面長駐
+    col_s1, col_s2, col_s3, col_s4 = st.columns([3, 2, 2, 1])
+    with col_s1: search_query = st.text_input("🔍 關鍵字 (輸入後按 Enter 或搜尋)：", placeholder="例如: 牛展, 雞翼...")
     with col_s2: selected_origins = st.multiselect("🌍 篩選產地 (選填)", global_origins, placeholder="全部產地")
     with col_s3: category_filter = st.selectbox("🥩 肉類分類 (強制隔離)", ["全部", "Beef (牛)", "Pork (豬)", "Chicken (雞)", "Lamp (羊)"])
+    with col_s4: 
+        st.markdown("<br>", unsafe_allow_html=True)
+        search_btn = st.button("🔍 搜尋", use_container_width=True)
 
+    # 💡 只要輸入框有字就可以顯示結果，不一定要按鈕，這是常駐狀態的關鍵
     if search_query:
         q_clean = clean_string(search_query)
         search_aliases = set([q_clean])
@@ -223,7 +229,7 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         
                 st.markdown("<hr style='margin:15px 0;'>", unsafe_allow_html=True)
                 
-                # 💡 內排行內購物車按鈕
+                # 💡 行內購物車按鈕
                 for idx, row in df_compare.iterrows():
                     is_soldout = (row['每磅均價 ($/LB)'] == "Sold out")
                     card_class = "product-card sold-out-card" if is_soldout else "product-card"
@@ -289,7 +295,6 @@ def render_tab2(global_origins, STATIC_DICT, cat_data, HEADER_MAP, parsed_histor
                         files_to_scan.append(sorted_flist[0])
                         
                     cloud_db = []
-                    # 💡 呼叫雲端快取記憶引擎 (0.5秒閃電讀取)
                     for file in files_to_scan:
                         supplier = identify_sup(file['name'])
                         parsed_items = cached_parse_cloud_pdf(file['id'], supplier, file['name'])
