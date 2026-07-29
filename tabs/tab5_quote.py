@@ -3,14 +3,13 @@ import pandas as pd
 from datetime import datetime
 
 def render_tab5():
-    # 💡 強制注入 CSS 解決 text_area 黑底黑字的問題
+    # ==========================================
+    # 💡 終極 CSS 穿透：強制所有文字框為白底黑字
+    # ==========================================
     st.markdown("""
     <style>
-    div[data-baseweb="textarea"] textarea {
-        background-color: #FFFFFF !important;
-        color: #111111 !important;
-        border: 1px solid #CCCCCC !important;
-    }
+    div[data-baseweb="textarea"] > div { background-color: #FFFFFF !important; border: 2px solid #1F77B4 !important; }
+    textarea { color: #000000 !important; background-color: #FFFFFF !important; -webkit-text-fill-color: #000000 !important; font-weight: 500 !important; }
     </style>
     """, unsafe_allow_html=True)
     
@@ -22,8 +21,7 @@ def render_tab5():
         st.session_state['quote_restaurant'] = restaurant_name
 
     st.markdown("""
-    把搜尋到的產品加入這裡，方便統一管理。  
-    <span style="color:#D9534F; font-weight:bold;">💡 雙向即時運算：雙擊表格直接修改「售價」或「利潤(%)」，系統會自動計算另一邊！</span>
+    <span style="color:#D9534F; font-weight:bold;">💡 雙向即時運算：雙擊表格直接修改「售價」或「利潤(%)」，點擊空白處後，系統會自動秒算另一邊！</span>
     """, unsafe_allow_html=True)
 
     if not st.session_state.get('quote_cart'):
@@ -31,11 +29,10 @@ def render_tab5():
         return
 
     # ==========================================
-    # 💡 初始化與預處理 (適應新架構，賦予預設 12% 利潤)
+    # 💡 初始化與預處理
     # ==========================================
     display_list = []
     for item in st.session_state['quote_cart']:
-        # 針對剛從搜尋頁加進來的產品進行預設初始化
         if item.get('final_price', 0.0) == 0.0:
             cost = float(item.get('cost', 0.0))
             pct = 12.0
@@ -51,7 +48,6 @@ def render_tab5():
     df_cart = pd.DataFrame(display_list)
     cols_order = ["🗑️ 刪除", "supplier", "name", "cost", "final_price", "profit_pct", "profit_dollar", "note"]
     
-    # 防呆過濾掉舊版殘留的無用欄位
     for col in cols_order:
         if col not in df_cart.columns: df_cart[col] = ""
     df_cart = df_cart[cols_order]
@@ -80,7 +76,7 @@ def render_tab5():
             "profit_dollar": st.column_config.NumberColumn("💰 實賺 ($)", disabled=True, format="%.2f"),
             "note": st.column_config.TextColumn("備註/產地")
         },
-        use_container_width=True, hide_index=True, key="quote_cart_editor", height=max(200, len(df_cart)*40 + 50)
+        use_container_width=True, hide_index=True, key="quote_cart_editor", height=max(200, len(df_cart)*45 + 50)
     )
 
     # ==========================================
@@ -103,24 +99,17 @@ def render_tab5():
         old_fp = float(old_item.get("final_price", 0.0))
         old_pct = float(old_item.get("profit_pct", 0.0))
         
-        # 判斷哪一格被手動修改了
         if pct != old_pct:
-            # 修改了利潤% -> 重算售價
             if pct >= 100: pct = 99.0
             fp = cost / (1 - (pct / 100)) if cost > 0 else 0.0
             has_changes = True
-            
         elif fp != old_fp:
-            # 修改了售價 -> 重算利潤%
             pct = ((fp - cost) / fp * 100) if fp > 0 else 0.0
             has_changes = True
-            
         elif cost != old_cost:
-            # 修改了成本 -> 保持原本的利潤%不變，推算新售價
             fp = cost / (1 - (old_pct / 100)) if cost > 0 else 0.0
             pct = old_pct
             has_changes = True
-            
         elif row["supplier"] != old_item.get("supplier") or row["name"] != old_item.get("name") or row["note"] != old_item.get("note"):
             has_changes = True
             
@@ -146,7 +135,7 @@ def render_tab5():
         st.rerun()
 
     # ==========================================
-    # 📤 輸出模組 (乾淨白底版)
+    # 📤 輸出模組 (解除了 key 鎖定，現在會顯示所有產品！)
     # ==========================================
     if any(item.get("final_price", 0) > 0 for item in st.session_state['quote_cart']):
         st.markdown("---")
@@ -173,13 +162,15 @@ def render_tab5():
         export_df = pd.DataFrame(export_data)
         
         col_ex1, col_ex2 = st.columns([1, 1])
+        
+        # 💡 解除 key 的鎖定，這樣每次新增產品，文字框才會即時更新顯示！
         with col_ex1:
             st.markdown("💬 **發給客人的版本 (已隱藏內部資訊)**")
-            st.text_area("直接點擊框內並全選複製：", value=client_text, height=200, key="client_txt")
+            st.text_area("直接點擊框內並全選複製：", value=client_text, height=250)
             
         with col_ex2:
             st.markdown("🔒 **內部紀錄版本 (包含供應商與成本)**")
-            st.text_area("留底專用，請勿傳給客人：", value=internal_text, height=200, key="internal_txt")
+            st.text_area("留底專用，請勿傳給客人：", value=internal_text, height=250)
 
         st.markdown("<br>", unsafe_allow_html=True)
         csv = export_df.to_csv(index=False, encoding='utf-8-sig')
