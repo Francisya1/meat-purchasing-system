@@ -167,14 +167,16 @@ def check_password():
 
 if not check_password(): st.stop()
 
-ACTIVE_SUPPLIERS = sorted(list(set(SUPPLIERS + ["形澧"])))
+# 💡 註冊「美亞」
+ACTIVE_SUPPLIERS = sorted(list(set(SUPPLIERS + ["形澧", "美亞"])))
 HEADER_MAP = {
     "新興城": {"LB": "新興城 $/LB", "KG": "新興城 $/KG"}, "金山洋行": {"LB": "金山 ($/lb)", "KG": "金山 ($/KG)"},
     "廣隆": {"LB": "廣隆 $/LB", "KG": "廣隆 $/KG"}, "哲朗": {"LB": "哲朗 $/LB", "KG": "哲朗 $/KG"},
     "浩新": {"LB": "浩新 $/LB", "KG": "浩新 $/KG"}, "一峰行": {"LB": "一峰行 $/LB", "KG": "一峰行 $/KG"},
-    "恆盛": {"LB": "恆盛 $/LB", "KG": "恆盛 $/KG"}, "萬安(遠東)": {"LB": "萬安 ($/lb)", "KG": "萬安 ($/kg)"}, "形澧": {"LB": "形澧 $/LB", "KG": "形澧 $/KG"} 
+    "恆盛": {"LB": "恆盛 $/LB", "KG": "恆盛 $/KG"}, "萬安(遠東)": {"LB": "萬安 ($/lb)", "KG": "萬安 ($/kg)"}, 
+    "形澧": {"LB": "形澧 $/LB", "KG": "形澧 $/KG"}, "美亞": {"LB": "美亞 $/LB", "KG": "美亞 $/KG"} 
 }
-FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧" }
+FILENAME_MAPPING = { "06-07-2026": "新興城", "FEB-2026": "廣隆", "29-Jun-2026": "金山洋行", "哲朗": "哲朗", "Price list": "浩新", "一峰行": "一峰行", "2026-06-22": "恆盛", "萬安": "萬安(遠東)", "形澧": "形澧", "WM09": "美亞" }
 STATIC_DICT = {
     "雞翼": ["中亦", "中翼", "雞翼", "雞中翼", "翼"], "牛上腦": ["牛上腦", "肩胛肉眼", "chuckroll", "chuck", "上腦"],
     "雞比": ["雞比", "雞脾", "餅比", "餅脾", "雞腿", "脾肉", "比肉", "全脾", "雞下脾"], "牛小排": ["牛小排", "牛仔骨", "shortrib", "牛排"],
@@ -208,14 +210,10 @@ with st.sidebar:
             if len(row) >= 6:
                 if len(row) >= 7 and re.match(r'\d{4}-\d{2}-\d{2}', row[1]): latest_dates[row[2]] = row[1]
                 else: latest_dates[row[1]] = row[0].split()[0]
-        
-        # 💡 修復魔法印出的 Bug
         for sup in ACTIVE_SUPPLIERS:
             date_str = latest_dates.get(sup, "尚未更新")
-            if date_str == "尚未更新":
-                st.warning(f"**{sup}** : {date_str}")
-            else:
-                st.success(f"**{sup}** : {date_str}")
+            if date_str == "尚未更新": st.warning(f"**{sup}** : {date_str}")
+            else: st.success(f"**{sup}** : {date_str}")
             
     st.markdown("---")
     if st.button("🚪 登出系統", use_container_width=True):
@@ -225,7 +223,7 @@ with st.sidebar:
             except: pass
         st.session_state.clear()
         st.rerun()
-    st.caption("版本號: v32.1 (解除魔法字串)")
+    st.caption("版本號: v33.0 (美亞加入與雲端純存檔模式)")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)", "🛒 報價計算車"])
 
