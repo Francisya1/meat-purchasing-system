@@ -49,14 +49,38 @@ def extract_robust_pool(pdf_bytes, supplier):
             lines = text.split('\n') if text else []
             tables = page.extract_tables()
             
-            if supplier in ["萬安(遠東)", "浩新", "形澧"]:
+            if supplier in ["萬安(遠東)", "浩新", "形澧", "美亞"]:
                 for table in tables:
                     for row in table:
                         row_str = " ".join([str(c).replace('\n', ' ').strip() for c in row if c])
                         lines.append(row_str)
                         
                 for line in lines:
-                    if supplier in ["萬安(遠東)", "浩新"]:
+                    # 💡 專屬美亞 (Amerasia) 的解剖引擎
+                    if supplier == "美亞":
+                        line = line.strip()
+                        if not line: continue
+                        # 找尋包含價值的字眼 (支援 lb, kg, 包, 盒, 箱 等)
+                        matches = list(re.finditer(r'\$\s*(\d+(?:\.\d+)?)\s*/?\s*(lb|kg|包|件|箱|盒|碟|隻|條|塊)', line, re.IGNORECASE))
+                        if matches:
+                            # 取最後一個價錢作為 M 價錢
+                            best_match = matches[-1]
+                            price_val = best_match.group(1)
+                            unit = best_match.group(2)
+                            
+                            # 萃取品名：切斷在第一個價錢之前
+                            first_price_idx = matches[0].start()
+                            raw_name = line[:first_price_idx].strip()
+                            # 砍掉最前面的 CODE (如 FB0707, PR0045 等)
+                            raw_name = re.sub(r'^[A-Z]{2}\d{4}[A-Z]?\s*', '', raw_name).strip()
+                            # 砍掉倉位或狀態字眼 (光一, 其士, 美亞送貨, 嘉2威強, 清, 平, 抵, NEW 等)
+                            raw_name = re.sub(r'(♥?美亞送貨|光一|其士|嘉2威強|平林|亞洲|單△|抵|平|新|NEW|推廣|熱賣).*$', '', raw_name).strip()
+                            
+                            if len(raw_name) > 2 and float(price_val) > 0:
+                                c_raw = clean_string(raw_name)
+                                robust_pool[c_raw] = {'price': price_val, 'unit': unit, 'raw_name': raw_name}
+
+                    elif supplier in ["萬安(遠東)", "浩新"]:
                         matches = re.finditer(r'(.*?)(?:\$|HKD|HK\$)\s*(\d+(?:\.\d+)?|清)\s*(磅|/\s*LB|/\s*KG|kg|lb|件|箱|/lb)?', line, re.IGNORECASE)
                         for match in matches:
                             raw_name = match.group(1).strip()
@@ -110,7 +134,9 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
         col1, col2, col3 = st.columns([1.2, 1, 2])
         with col1: 
             selected_supplier = st.selectbox("請選擇本次提交的供應商：", ACTIVE_SUPPLIERS)
+            # 💡 加入純雲端選項
             st.markdown("<br>", unsafe_allow_html=True)
+            pure_cloud_mode = st.checkbox("☁️ 純雲端上傳 (不更新母表)", help="勾選後，報價單只會存入雲端供 Tab 2 搜尋，不會檢查或覆寫母表。適用於新系列或不需建檔的特別報價單。")
             submit_upload = st.form_submit_button("🚀 ENTER / 提交報價單", use_container_width=True)
         with col2:
             hk_tz = pytz.timezone('Asia/Hong_Kong')
@@ -119,10 +145,13 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
             uploaded_file = st.file_uploader("上傳 PDF 報價單", type="pdf")
 
     if submit_upload:
-        if uploaded_file is None: st.error("⚠️ 請先上傳 PDF 檔案！")
+        if uploaded_file is None: 
+            st.error("⚠️ 請先上傳 PDF 檔案！")
         else:
             targets = target_dict.get(selected_supplier, [])
-            if not targets: st.error(f"❌ 字典中找不到【{selected_supplier}】的產品。")
+            # 如果不是純雲端模式，且找不到產品，報錯
+            if not pure_cloud_mode and not targets: 
+                st.error(f"❌ 字典中找不到【{selected_supplier}】的產品。若這是全新系列，請勾選「☁️ 純雲端上傳」。")
             else:
                 loading_ph2 = st.empty()
                 loading_ph2.markdown(get_wavy_loading_html(), unsafe_allow_html=True)
@@ -130,14 +159,16 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                 pdf_bytes = io.BytesIO(uploaded_file.read())
                 
                 new_filename = f"{selected_supplier}_{quote_date.strftime('%Y-%m-%d')}.pdf"
+                
+                # 💡 專屬純雲端系列名稱 (例如美亞的 Winterfrost)
+                if pure_cloud_mode:
+                    new_filename = f"{selected_supplier}(純雲端)_{quote_date.strftime('%Y-%m-%d')}.pdf"
+                
                 try:
                     drive_service = get_drive_connection()
                     pdf_bytes.seek(0)
-                    
-                    # 💡 雲端智能覆寫機制 (Overwrite)
                     query = f"name='{new_filename}' and '{DRIVE_FOLDER_ID}' in parents and trashed=false"
                     existing_files = drive_service.files().list(q=query, fields="files(id)", supportsAllDrives=True, includeItemsFromAllDrives=True).execute().get('files', [])
-                    
                     media = MediaIoBaseUpload(pdf_bytes, mimetype='application/pdf', resumable=False)
                     
                     if existing_files:
@@ -150,8 +181,15 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                         st.toast(f"✅ 報價單已成功自動備份至雲端: {new_filename}")
                         
                 except Exception as e:
-                    st.warning(f"💡 **溫馨提示：** 系統已成功解析價錢！但無法自動將 PDF 存入雲端。請將 `{new_filename}` 手動拖曳到你的 Google Drive 資料夾中。", icon="ℹ️")
+                    st.warning(f"💡 **溫馨提示：** 系統已成功解析價錢！但無法自動將 PDF 存入雲端。請將檔案手動拖曳到你的 Google Drive 資料夾中。", icon="ℹ️")
                 
+                # 💡 如果是純雲端模式，上傳完畢就直接停止，不往下執行
+                if pure_cloud_mode:
+                    loading_ph2.empty()
+                    st.balloons()
+                    st.success(f"🎉 **【{selected_supplier}】的報價單已經成功以「純雲端模式」歸檔！** \n你現在可以隨時到 **Tab 2 (日常搜尋)** 的「雲端所有供應商」區塊中搜尋這份報價單內的產品價錢了！")
+                    st.stop()
+
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
                 
@@ -203,16 +241,16 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                             data = extracted_items[sku_db]
                             raw_price = data['raw_price']; unit = data['guessed_unit']
                             
-                            if selected_supplier == "形澧":
+                            if selected_supplier in ["形澧", "美亞"]:
                                 m_line = str(data.get('matched_line', '')).strip()
                                 if m_line and m_line != "-":
-                                    m_line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz)\b', r'\1', m_line, flags=re.IGNORECASE)
+                                    m_line = re.sub(r'(?<=\d)\s+(kg|g|lb|lbs|oz|包|件|箱|盒|碟|隻|條|塊)\b', r'\1', m_line, flags=re.IGNORECASE)
                                     m_line = re.sub(r'\s*([*xX])\s*', r'\1', m_line)
                                     tokens = re.split(r'\s+|\|', m_line)
                                     for token in reversed(tokens):
                                         tc = re.sub(r'[^0-9\.a-zA-Z\u4e00-\u9fa5]', '', token)
                                         if not tc: continue
-                                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件)$', tc.lower()): continue
+                                        if re.search(r'(kg|g|lb|lbs|oz|pc|box|箱|件|包|條|盒|碟|隻|塊)$', tc.lower()): continue
                                         if re.match(r'^P\d+$', tc, re.IGNORECASE): continue
                                         if re.match(r'^\d+(?:\.\d+)?$', tc):
                                             val = float(tc)
