@@ -202,6 +202,14 @@ if len(hist_vals) > 1:
 with st.sidebar:
     st.markdown(f"### 👋 歡迎回來, **{st.session_state.get('username', 'User')}**!")
     st.markdown("---")
+    
+    # 💡 新增：強制刷新母表按鈕 (解決快取記憶的終極武器)
+    if st.button("🔄 強制刷新雲端母表", type="primary", use_container_width=True, help="如果剛在 Excel 新增了欄位或資料，點擊這裡可以立刻同步最新狀態！"):
+        fetch_all_google_data.clear()
+        st.success("✅ 系統記憶已清除，正在載入最新母表...")
+        time.sleep(1)
+        st.rerun()
+
     if len(hist_vals) > 1: st.metric(label="母表追蹤產品數", value=sum(len(v)-2 for v in cat_data.values() if v))
     st.markdown("### 各供應商最後報價")
     if len(hist_vals) > 1:
@@ -223,7 +231,7 @@ with st.sidebar:
             except: pass
         st.session_state.clear()
         st.rerun()
-    st.caption("版本號: v33.0 (美亞加入與雲端純存檔模式)")
+    st.caption("版本號: v33.1 (加入側邊欄強制刷新鍵)")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["一鍵更新報價", "日常搜尋", "📊 智能入貨分析", "⚙️ 系統管理 (開發者專用)", "🛒 報價計算車"])
 
