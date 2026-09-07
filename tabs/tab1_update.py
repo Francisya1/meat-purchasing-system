@@ -56,24 +56,18 @@ def extract_robust_pool(pdf_bytes, supplier):
                         lines.append(row_str)
                         
                 for line in lines:
-                    # 💡 專屬美亞 (Amerasia) 的解剖引擎
                     if supplier == "美亞":
                         line = line.strip()
                         if not line: continue
-                        # 找尋包含價值的字眼 (支援 lb, kg, 包, 盒, 箱 等)
                         matches = list(re.finditer(r'\$\s*(\d+(?:\.\d+)?)\s*/?\s*(lb|kg|包|件|箱|盒|碟|隻|條|塊)', line, re.IGNORECASE))
                         if matches:
-                            # 取最後一個價錢作為 M 價錢
                             best_match = matches[-1]
                             price_val = best_match.group(1)
                             unit = best_match.group(2)
                             
-                            # 萃取品名：切斷在第一個價錢之前
                             first_price_idx = matches[0].start()
                             raw_name = line[:first_price_idx].strip()
-                            # 砍掉最前面的 CODE (如 FB0707, PR0045 等)
                             raw_name = re.sub(r'^[A-Z]{2}\d{4}[A-Z]?\s*', '', raw_name).strip()
-                            # 砍掉倉位或狀態字眼 (光一, 其士, 美亞送貨, 嘉2威強, 清, 平, 抵, NEW 等)
                             raw_name = re.sub(r'(♥?美亞送貨|光一|其士|嘉2威強|平林|亞洲|單△|抵|平|新|NEW|推廣|熱賣).*$', '', raw_name).strip()
                             
                             if len(raw_name) > 2 and float(price_val) > 0:
@@ -134,7 +128,6 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
         col1, col2, col3 = st.columns([1.2, 1, 2])
         with col1: 
             selected_supplier = st.selectbox("請選擇本次提交的供應商：", ACTIVE_SUPPLIERS)
-            # 💡 加入純雲端選項
             st.markdown("<br>", unsafe_allow_html=True)
             pure_cloud_mode = st.checkbox("☁️ 純雲端上傳 (不更新母表)", help="勾選後，報價單只會存入雲端供 Tab 2 搜尋，不會檢查或覆寫母表。適用於新系列或不需建檔的特別報價單。")
             submit_upload = st.form_submit_button("🚀 ENTER / 提交報價單", use_container_width=True)
@@ -149,7 +142,6 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
             st.error("⚠️ 請先上傳 PDF 檔案！")
         else:
             targets = target_dict.get(selected_supplier, [])
-            # 如果不是純雲端模式，且找不到產品，報錯
             if not pure_cloud_mode and not targets: 
                 st.error(f"❌ 字典中找不到【{selected_supplier}】的產品。若這是全新系列，請勾選「☁️ 純雲端上傳」。")
             else:
@@ -159,8 +151,6 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                 pdf_bytes = io.BytesIO(uploaded_file.read())
                 
                 new_filename = f"{selected_supplier}_{quote_date.strftime('%Y-%m-%d')}.pdf"
-                
-                # 💡 專屬純雲端系列名稱 (例如美亞的 Winterfrost)
                 if pure_cloud_mode:
                     new_filename = f"{selected_supplier}(純雲端)_{quote_date.strftime('%Y-%m-%d')}.pdf"
                 
@@ -183,7 +173,6 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                 except Exception as e:
                     st.warning(f"💡 **溫馨提示：** 系統已成功解析價錢！但無法自動將 PDF 存入雲端。請將檔案手動拖曳到你的 Google Drive 資料夾中。", icon="ℹ️")
                 
-                # 💡 如果是純雲端模式，上傳完畢就直接停止，不往下執行
                 if pure_cloud_mode:
                     loading_ph2.empty()
                     st.balloons()
