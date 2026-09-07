@@ -177,7 +177,8 @@ def render_tab1(ACTIVE_SUPPLIERS, HEADER_MAP, target_dict, cat_data, parsed_hist
                     loading_ph2.empty()
                     st.balloons()
                     st.success(f"🎉 **【{selected_supplier}】的報價單已經成功以「純雲端模式」歸檔！** \n你現在可以隨時到 **Tab 2 (日常搜尋)** 的「雲端所有供應商」區塊中搜尋這份報價單內的產品價錢了！")
-                    st.stop()
+                    # 💡 解除 st.stop() 全域當機的詛咒，改為優雅退場！
+                    return
 
                 pdf_bytes.seek(0)
                 extracted_items = scan_pdf_with_anchors(pdf_bytes, targets, selected_supplier)
